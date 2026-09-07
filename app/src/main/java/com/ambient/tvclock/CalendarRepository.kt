@@ -19,7 +19,7 @@ object CalendarRepository {
         val personalUrl = CalendarPreferences.getPersonalUrl(context)
         val workUrl = CalendarPreferences.getWorkUrl(context)
         val googleApi = GoogleCalendarClient.isConfigured
-        if (personalUrl.isBlank() && workUrl.isBlank() && !googleApi) {
+        if (!CalendarPreferences.hasConfiguredSource(context)) {
             return CalendarSnapshot(emptyList(), System.currentTimeMillis())
         }
 
