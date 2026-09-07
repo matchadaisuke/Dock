@@ -21,12 +21,8 @@
             android:title="@string/pref_show_calendar_title" />
         <EditTextPreference
             android:key="personal_calendar_url"
-            android:summary="@string/pref_personal_calendar_url_summary"
-            android:title="@string/pref_personal_calendar_url_title" />
-        <EditTextPreference
-            android:key="work_calendar_url"
-            android:summary="@string/pref_work_calendar_url_summary"
-            android:title="@string/pref_work_calendar_url_title" />
+            android:summary="@string/pref_calendar_url_summary"
+            android:title="@string/pref_calendar_url_title" />
     </PreferenceCategory>
 
     <PreferenceCategory
@@ -209,11 +205,11 @@
 
     <PreferenceCategory android:key="category_background" android:title="@string/pref_category_background">
         <ListPreference android:defaultValue="black" android:entries="@array/background_idle_source_labels" android:entryValues="@array/background_idle_source_values" android:key="background_when_idle" android:summary="@string/pref_background_when_idle_summary" android:title="@string/pref_background_when_idle_title" app:useSimpleSummaryProvider="true" />
-        <ListPreference android:defaultValue="album_art" android:entries="@array/background_playing_source_labels" android:entryValues="@array/background_playing_source_values" android:key="background_when_playing" android:summary="@string/pref_background_when_playing_summary" android:title="@string/pref_background_when_playing_title" app:useSimpleSummaryProvider="true" />
+        <ListPreference android:defaultValue="album_art" android:entries="@array/background_playing_source_labels" android:entryValues="@array/background_playing_source_values" android:key="background_when_playing" android:summary="@string/pref_background_when_playing_summary" android:title="@string/pref_background_playing_source_title" app:useSimpleSummaryProvider="true" />
         <SwitchPreferenceCompat android:defaultValue="true" android:key="background_blur" android:summary="@string/pref_background_blur_summary" android:title="@string/pref_background_blur_title" />
         <MultiSelectListPreference android:entries="@array/background_keyword_preset_labels" android:entryValues="@array/background_keyword_preset_values" android:key="background_keyword_presets" android:summary="@string/pref_background_keyword_presets_summary" android:title="@string/pref_background_keyword_presets_title" />
         <EditTextPreference android:key="background_custom_keywords" android:summary="@string/pref_background_custom_keywords_summary" android:title="@string/pref_background_custom_keywords_title" />
-        <ListPreference android:defaultValue="600000" android:entries="@array/background_shuffle_labels" android:entryValues="@array/background_shuffle_values" android:key="background_shuffle_interval_ms" android:summary="@string/pref_background_shuffle_interval_summary" android:title="@string/pref_background_shuffle_interval_title" app:useSimpleSummaryProvider="true" />
+        <ListPreference android:defaultValue="600000" android:entries="@array/background_shuffle_labels" android:entryValues="@array/background_shuffle_values" android:key="background_shuffle_interval_ms" android:summary="@string/pref_background_shuffle_summary" android:title="@string/pref_background_shuffle_title" app:useSimpleSummaryProvider="true" />
         <Preference android:key="background_shuffle_now" android:summary="@string/pref_background_shuffle_now_summary" android:title="@string/pref_background_shuffle_now_title" />
         <Preference android:key="background_unsplash_key_status" android:selectable="false" android:summary="@string/pref_background_unsplash_no_key" android:title="@string/pref_background_unsplash_key_status_title" />
     </PreferenceCategory>
