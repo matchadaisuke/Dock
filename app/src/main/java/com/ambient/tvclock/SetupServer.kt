@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * Security notes:
  * - GET / never exposes saved settings; the PIN must be verified first.
- * - Secret calendar URLs are read from/written to encrypted storage.
+ * - The secret calendar URL is read from/written to encrypted storage.
  * - Calendar feeds must use HTTPS.
  * - Only local/link-local clients are accepted and responses are no-store.
  *
@@ -273,8 +273,7 @@ class SetupServer(
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val inputs = FIELDS.joinToString("\n") { field ->
             val rawValue = when (field.key) {
-                CalendarPreferences.KEY_PERSONAL_URL -> CalendarPreferences.getPersonalUrl(context)
-                CalendarPreferences.KEY_WORK_URL -> CalendarPreferences.getWorkUrl(context)
+                CalendarPreferences.KEY_CALENDAR_URL -> CalendarPreferences.getCalendarUrl(context)
                 else -> prefs.getString(field.key, "").orEmpty()
             }
             val value = htmlEscape(rawValue)
@@ -340,8 +339,7 @@ class SetupServer(
         private const val MAX_BODY_BYTES = 16 * 1024
 
         private val FIELDS = listOf(
-            Field(CalendarPreferences.KEY_PERSONAL_URL, R.string.pref_personal_calendar_url_title, calendarSecret = true),
-            Field(CalendarPreferences.KEY_WORK_URL, R.string.pref_work_calendar_url_title, calendarSecret = true),
+            Field(CalendarPreferences.KEY_CALENDAR_URL, R.string.pref_calendar_url_title, calendarSecret = true),
             Field(HomeLabPreferences.KEY_HOMELAB_URL, R.string.pref_homelab_url_title),
             Field(AdBlockPreferences.KEY_DASHBOARD_URL, R.string.pref_adblock_url_title),
         )
