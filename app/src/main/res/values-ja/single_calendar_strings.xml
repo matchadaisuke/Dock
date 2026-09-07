@@ -2,7 +2,4 @@
 <resources>
     <string name="pref_calendar_url_title">カレンダーURL</string>
     <string name="pref_calendar_url_summary">非公開のiCalまたはwebcal購読URL</string>
-    <string name="deck_calendar">カレンダー</string>
-    <string name="deck_quiet_calendar_title">予定はありません</string>
-    <string name="deck_quiet_calendar_subtitle">今日の予定は空いています</string>
 </resources>
