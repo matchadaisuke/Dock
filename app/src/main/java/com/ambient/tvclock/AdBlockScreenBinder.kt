@@ -1,7 +1,6 @@
 package com.ambient.tvclock
 
 import android.content.res.ColorStateList
-import android.graphics.PorterDuff
 import android.view.View
 import android.widget.TextView
 import androidx.core.content.ContextCompat
@@ -99,7 +98,7 @@ class AdBlockScreenBinder(
 
     private fun tint(colorRes: Int) {
         val color = ContextCompat.getColor(root.context, colorRes)
-        dot.background?.mutate()?.setColorFilter(color, PorterDuff.Mode.SRC_IN)
+        dot.background?.mutate()?.setTint(color)
         halo.backgroundTintList = ColorStateList.valueOf(haloTint(color))
     }
 
