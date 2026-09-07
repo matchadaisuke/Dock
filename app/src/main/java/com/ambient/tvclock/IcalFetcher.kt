@@ -3,11 +3,13 @@ package com.ambient.tvclock
 import android.util.Log
 import okhttp3.HttpUrl
 import okhttp3.Request
+import java.io.EOFException
 
 object IcalFetcher {
 
     private const val TAG = "IcalFetcher"
     private const val MAX_REDIRECTS = 3
+    private const val MAX_PREMATURE_EOF_RETRIES = 2
 
     // Published Google/Outlook feeds include history and recurrence metadata,
     // so mature calendars can legitimately exceed 1 MiB. Keep a hard bound to
@@ -61,56 +63,78 @@ object IcalFetcher {
     }
 
     private fun fetchOnce(url: HttpUrl): FetchResult {
-        val request = Request.Builder()
-            .url(url)
-            .get()
-            .header(
-                "User-Agent",
-                "Mozilla/5.0 (Linux; Android 10; TV Awake Clock) AppleWebKit/537.36"
-            )
-            .header("Accept", "text/calendar,*/*")
-            .build()
+        repeat(MAX_PREMATURE_EOF_RETRIES + 1) { attempt ->
+            val request = Request.Builder()
+                .url(url)
+                .get()
+                .header(
+                    "User-Agent",
+                    "Mozilla/5.0 (Linux; Android 10; TV Awake Clock) AppleWebKit/537.36"
+                )
+                .header("Accept", "text/calendar,*/*")
+                .build()
 
-        return try {
-            client.newCall(request).execute().use { response ->
-                if (response.code in 300..399) {
-                    val location = response.header("Location")
-                    if (location.isNullOrBlank()) {
-                        Log.w(TAG, "Calendar redirect did not include Location")
-                        return FetchResult.Failed("リダイレクト先が返されませんでした")
+            try {
+                client.newCall(request).execute().use { response ->
+                    if (response.code in 300..399) {
+                        val location = response.header("Location")
+                        if (location.isNullOrBlank()) {
+                            Log.w(TAG, "Calendar redirect did not include Location")
+                            return FetchResult.Failed("リダイレクト先が返されませんでした")
+                        }
+                        return FetchResult.Redirect(location)
                     }
-                    return FetchResult.Redirect(location)
-                }
-                if (!response.isSuccessful) {
-                    Log.w(TAG, "HTTP ${response.code} for calendar feed")
-                    return FetchResult.Failed("HTTP ${response.code}")
-                }
+                    if (!response.isSuccessful) {
+                        Log.w(TAG, "HTTP ${response.code} for calendar feed")
+                        return FetchResult.Failed("HTTP ${response.code}")
+                    }
 
-                val body = response.body ?: return FetchResult.Failed("サーバーの応答が空です")
-                val declaredLength = body.contentLength()
-                if (declaredLength > MAX_CALENDAR_BYTES) {
-                    Log.w(TAG, "Calendar feed too large: $declaredLength bytes")
-                    return FetchResult.Failed("iCalデータが32 MiBを超えています")
-                }
+                    val body = response.body ?: return FetchResult.Failed("サーバーの応答が空です")
+                    val declaredLength = body.contentLength()
+                    if (declaredLength > MAX_CALENDAR_BYTES) {
+                        Log.w(TAG, "Calendar feed too large: $declaredLength bytes")
+                        return FetchResult.Failed("iCalデータが32 MiBを超えています")
+                    }
 
-                val bytes = body.source().readByteArray(MAX_CALENDAR_BYTES + 1)
-                if (bytes.size > MAX_CALENDAR_BYTES) {
-                    Log.w(TAG, "Calendar feed exceeded size limit")
-                    return FetchResult.Failed("iCalデータが32 MiBを超えています")
+                    val bytes = body.source().readByteArray(MAX_CALENDAR_BYTES + 1)
+                    if (bytes.size > MAX_CALENDAR_BYTES) {
+                        Log.w(TAG, "Calendar feed exceeded size limit")
+                        return FetchResult.Failed("iCalデータが32 MiBを超えています")
+                    }
+                    return FetchResult.Body(bytes.toString(Charsets.UTF_8))
                 }
-                FetchResult.Body(bytes.toString(Charsets.UTF_8))
+            } catch (e: Exception) {
+                if (isPrematureEof(e) && attempt < MAX_PREMATURE_EOF_RETRIES) {
+                    Log.w(TAG, "Calendar response ended early; retrying (${attempt + 1}/$MAX_PREMATURE_EOF_RETRIES)")
+                    continue
+                }
+                Log.e(TAG, "Fetch failed: ${e.javaClass.simpleName}: ${e.message}")
+                return FetchResult.Failed(
+                    when {
+                        isPrematureEof(e) -> "通信が途中で切断されました（${MAX_PREMATURE_EOF_RETRIES + 1}回試行）"
+                        e is java.net.SocketTimeoutException -> "通信がタイムアウトしました"
+                        e is java.net.UnknownHostException -> "サーバー名を解決できませんでした"
+                        e is javax.net.ssl.SSLException -> "SSL/TLS接続に失敗しました"
+                        else -> "通信エラー: ${e.javaClass.simpleName}"
+                    }
+                )
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Fetch failed: ${e.javaClass.simpleName}: ${e.message}")
-            FetchResult.Failed(
-                when (e) {
-                    is java.net.SocketTimeoutException -> "通信がタイムアウトしました"
-                    is java.net.UnknownHostException -> "サーバー名を解決できませんでした"
-                    is javax.net.ssl.SSLException -> "SSL/TLS接続に失敗しました"
-                    else -> "通信エラー: ${e.javaClass.simpleName}"
-                }
-            )
         }
+        return FetchResult.Failed("iCalデータを取得できませんでした")
+    }
+
+    private fun isPrematureEof(error: Throwable): Boolean {
+        var current: Throwable? = error
+        while (current != null) {
+            if (current is EOFException ||
+                current.message?.contains("unexpected end of stream", ignoreCase = true) == true ||
+                current.message?.contains("unexpected end of input", ignoreCase = true) == true
+            ) {
+                return true
+            }
+            current = current.cause
+        }
+        return false
     }
 
     private sealed interface FetchResult {

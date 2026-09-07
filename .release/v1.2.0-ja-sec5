@@ -1,0 +1,2 @@
+
+- iCal download now retries premature EOF / truncated-response failures up to two times before reporting the connection was cut.
