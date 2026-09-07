@@ -44,49 +44,27 @@ open class RtspHandler(
     private val onMirrorRecord: () -> Unit = {}
 ) {
 
-    // The server socket that accepts incoming AirPlay connections on port 7000
     private var serverSocket: ServerSocket? = null
 
-    // The currently active client connection (only one at a time, per REQUIREMENTS.md FR-10)
     @Volatile
     private var activeClient: Socket? = null
 
-    // Flag to signal that we should stop accepting new connections
     @Volatile
     private var running = false
 
-    // RTSP CSeq counter — each RTSP response must echo back the request's CSeq number
     private var currentCSeq: Int = 0
 
-    // Parsed SDP from the most recent ANNOUNCE — stored for use in SETUP and RECORD
     @Volatile
     private var currentSession: SessionDescription? = null
 
-    // Counter for SETUP calls: first is typically video, second is audio
     private var setupCount = 0
 
-    /** True after macOS plist SETUP (ekey) — RECORD/TEARDOWN use rtsp:// URIs, not /paths. */
     @Volatile
     private var macOsMirrorHandshake = false
 
-    /**
-     * Callback for decoded H.264 NAL units from the RTP stream.
-     * Set by [AirPlayReceiver] after RECORD — wires to [VideoDecoder.decodeNalUnit].
-     * Null for audio-only streams.
-     */
     @Volatile
     var onVideoNalUnit: ((nalUnit: ByteArray, ptsUs: Long) -> Unit)? = null
 
-    /**
-     * Starts the RTSP server.
-     *
-     * Opens TCP port 7000 and begins accepting connections in a background coroutine.
-     * This method returns immediately; the actual work runs asynchronously.
-     *
-     * @param scope The [CoroutineScope] to launch the server coroutine in.
-     *              Should be the AirPlayReceiver's SupervisorJob scope so that
-     *              a crash here doesn't kill the mDNS service.
-     */
     fun start(scope: CoroutineScope) {
         running = true
         scope.launch(Dispatchers.IO) {
@@ -94,14 +72,6 @@ open class RtspHandler(
         }
     }
 
-    /**
-     * Stops the RTSP server.
-     *
-     * Closes the server socket (which causes the accept() call to throw, ending the loop),
-     * disconnects any active client, and releases media resources.
-     *
-     * Safe to call from any thread.
-     */
     fun stop() {
         running = false
         try {
@@ -115,25 +85,15 @@ open class RtspHandler(
         Logger.i("RTSP handler stopped")
     }
 
-    /**
-     * The main server loop. Listens on port 7000 and handles one client at a time.
-     *
-     * SECURITY: Only one client is accepted at a time (FR-07). A second connection
-     * attempt while a client is active receives a 503 response and is disconnected.
-     *
-     * @param scope Used to check if the coroutine is still active (for graceful shutdown).
-     */
     private fun runServer(scope: CoroutineScope) {
         try {
             serverSocket = ServerSocket(RTSP_PORT)
             Logger.i("RTSP server listening on port $RTSP_PORT")
 
             while (running && scope.isActive) {
-                // accept() blocks until a client connects — this is intentional
                 val clientSocket = serverSocket!!.accept()
                 Logger.i("New client connected: ${AirPlayNetwork.formatAddress(clientSocket.inetAddress)}")
 
-                // SECURITY: Only one active client at a time (see FR-07)
                 if (activeClient != null && !activeClient!!.isClosed) {
                     Logger.w("Rejecting second client — already streaming")
                     sendServiceUnavailable(clientSocket)
@@ -145,8 +105,6 @@ open class RtspHandler(
                 handleClient(clientSocket)
             }
         } catch (e: Exception) {
-            // SocketException is thrown when serverSocket.close() is called from stop()
-            // This is expected behavior during shutdown, not a real error
             if (running) {
                 Logger.e("RTSP server error (unexpected)", e)
             } else {
@@ -155,19 +113,6 @@ open class RtspHandler(
         }
     }
 
-    /**
-     * Handles all RTSP communication with a single connected client.
-     *
-     * Phase 1 (RTSP): reads RTSP text requests until RECORD is received.
-     * Phase 2 (RTP):  hands the raw [InputStream] to [RtpInterleaved.readLoop]
-     *                 for binary `$`-framed RTP reading.
-     *
-     * WHY raw InputStream (not BufferedReader): after RECORD the connection switches
-     * from text to binary. A BufferedReader would consume and discard binary data in
-     * its internal read-ahead buffer, causing the first RTP frames to be lost.
-     *
-     * @param socket The connected client socket.
-     */
     private fun peerAddress(socket: Socket): InetAddress =
         AirPlayNetwork.normalizePeerAddress(socket.inetAddress, socket)
 
@@ -175,15 +120,9 @@ open class RtspHandler(
         val inputStream = socket.getInputStream()
         val outputStream = socket.getOutputStream()
         var mirrorMode = false
-        // Only fire onStreamingStopped() in `finally` if this connection actually
-        // entered streaming mode (RECORD with 200). Without this gate, every
-        // pair-verify-only probe triggers a full teardown — including mDNS
-        // restart — which makes the device flicker in the sender's picker list
-        // and provokes a re-pair storm after the iPhone's normal TEARDOWN.
         var streamingStarted = false
 
         try {
-            // ── Phase 1: AirPlay control + RTSP handshake ───────────────────
             while (running && !socket.isClosed) {
                 val request = readAirPlayRequest(inputStream) ?: break
                 val response = if (isAirPlayControlRequest(request)) {
@@ -196,19 +135,13 @@ open class RtspHandler(
                         streamingStarted = true
                         onMirrorRecord()
                     }
-                    // POST /play (AirPlay video URL) — iOS frequently never sends
-                    // POST /stop; the session ends when the TCP connection closes.
-                    // Flag this connection as a streaming session so the finally
-                    // block runs onStreamingStopped() and releases ExoPlayer,
-                    // otherwise the previous video stays pinned to the Surface
-                    // and any subsequent session looks "stuck on the last frame".
                     if (request.method == "POST" && pathOf(request.uri) == "/play" &&
                         r.statusCode == 200) {
                         streamingStarted = true
                     }
                     r
                 } else {
-                    val r = routeRequest(request, outputStream)
+                    val r = routeRequest(request)
                     if (request.method == "RECORD" && r.statusCode == 200) {
                         streamingStarted = true
                     }
@@ -216,7 +149,6 @@ open class RtspHandler(
                 }
                 sendResponse(outputStream, request.protocol, response)
 
-                // Classic RTSP interleaved path after RECORD
                 if (!mirrorMode && request.method == "RECORD" && response.statusCode == 200) {
                     Logger.d("RTSP handshake complete — switching to RTP interleaved mode")
                     break
@@ -224,7 +156,6 @@ open class RtspHandler(
             }
 
             if (mirrorMode) {
-                // Mirror video uses a separate TCP port; keep connection open for TEARDOWN/feedback
                 while (running && !socket.isClosed) {
                     val request = readAirPlayRequest(inputStream) ?: break
                     if (!isAirPlayControlRequest(request)) continue
@@ -235,8 +166,6 @@ open class RtspHandler(
                 return
             }
 
-            // ── Phase 2: RTP binary read loop ────────────────────────────────
-            // Only start if the session was established (ANNOUNCE was parsed)
             val session = currentSession
             if (session != null && running) {
                 RtpInterleaved.readLoop(
@@ -262,17 +191,6 @@ open class RtspHandler(
         }
     }
 
-    /**
-     * Reads a complete RTSP request from the raw [inputStream].
-     *
-     * Uses byte-by-byte reading to detect CRLF line endings without consuming
-     * binary data into a buffered reader's internal buffer — critical for the
-     * switch to RTP interleaved mode after RECORD.
-     *
-     * SECURITY: Total message size capped at [MAX_MESSAGE_BYTES].
-     *
-     * @return Parsed [RtspRequest], or null on clean EOF / oversized message.
-     */
     private fun pathOf(uri: String): String {
         val q = uri.indexOf('?')
         return if (q >= 0) uri.substring(0, q) else uri
@@ -307,7 +225,7 @@ open class RtspHandler(
 
         while (true) {
             val line = readLine(inputStream) ?: return null
-            if (line.isEmpty()) break  // blank line = end of headers
+            if (line.isEmpty()) break
 
             totalBytes += line.length
             if (totalBytes > MAX_MESSAGE_BYTES) {
@@ -352,38 +270,19 @@ open class RtspHandler(
         )
     }
 
-    /**
-     * Reads a single CRLF-terminated line from [inputStream], byte by byte.
-     *
-     * Returns null on EOF. Returns an empty string for a blank line (only `\r\n`).
-     * The trailing `\r\n` is stripped from the result.
-     */
     private fun readLine(inputStream: InputStream): String? {
         val sb = StringBuilder()
         while (true) {
             val b = inputStream.read()
             if (b == -1) return if (sb.isEmpty()) null else sb.toString()
-            if (b == '\r'.code) continue  // skip CR
+            if (b == '\r'.code) continue
             if (b == '\n'.code) return sb.toString()
             sb.append(b.toChar())
-            if (sb.length > MAX_MESSAGE_BYTES) return null  // safety valve
+            if (sb.length > MAX_MESSAGE_BYTES) return null
         }
     }
 
-    /**
-     * Routes an [RtspRequest] to the appropriate handler method.
-     *
-     * Each RTSP method has a specific role in the AirPlay protocol:
-     * - OPTIONS:  macOS asks "what can you do?" — we reply with our supported methods
-     * - ANNOUNCE: macOS sends the SDP describing codecs and encryption keys
-     * - SETUP:    macOS requests that we set up a media channel (video or audio)
-     * - RECORD:   macOS says "start sending media now"
-     * - TEARDOWN: macOS says "stop and clean up"
-     * - GET/SET_PARAMETER: used for keep-alive and metadata updates
-     *
-     * @return An [RtspResponse] to send back to the client.
-     */
-    private fun routeRequest(request: RtspRequest, outputStream: OutputStream): RtspResponse {
+    private fun routeRequest(request: RtspRequest): RtspResponse {
         Logger.d("RTSP ${request.method} ${request.uri}")
         return when (request.method) {
             "OPTIONS"       -> handleOptionsInternal(request)
@@ -391,23 +290,14 @@ open class RtspHandler(
             "SETUP"         -> handleSetupInternal(request)
             "RECORD"        -> handleRecordInternal(request)
             "TEARDOWN"      -> handleTeardownInternal(request)
-            "GET_PARAMETER" -> handleGetParameter(request)
+            "GET_PARAMETER" -> handleGetParameter()
             "SET_PARAMETER" -> handleSetParameter(request)
-            "FLUSH"         -> handleFlush(request)
+            "FLUSH"         -> handleFlush()
             "PAUSE"         -> handlePauseInternal(request)
             else            -> handleUnknownInternal(request)
         }
     }
 
-    /**
-     * Handles OPTIONS — macOS asks "what RTSP methods do you support?"
-     *
-     * We respond with the list of methods PhairPlay supports. This is the
-     * first message in every AirPlay session.
-     *
-     * Exposed as `internal open` so unit tests can call it via [TestableRtspHandler]
-     * without requiring a real network socket.
-     */
     open fun handleOptionsInternal(request: RtspRequest): RtspResponse {
         return RtspResponse(
             statusCode = 200,
@@ -418,14 +308,6 @@ open class RtspHandler(
         )
     }
 
-    /**
-     * Handles ANNOUNCE — macOS/iOS sends the SDP body describing codecs, ports, and encryption.
-     *
-     * We parse the SDP with [SdpParser] and store the result in [currentSession].
-     * The session is used later in SETUP and RECORD to configure the media pipeline.
-     *
-     * Security: if SDP parsing fails completely, we return 400 Bad Request.
-     */
     open fun handleAnnounceInternal(request: RtspRequest): RtspResponse {
         Logger.d("ANNOUNCE body (${request.body.length} bytes)")
         val parsed = SdpParser.parse(request.body)
@@ -444,32 +326,20 @@ open class RtspHandler(
         return RtspResponse(statusCode = 200, statusMessage = "OK")
     }
 
-    /**
-     * Extracts a readable sender name from the RTSP `User-Agent` header (S6-1).
-     * "AirPlay/376.1.1" → "AirPlay", "iTunes/12.12" → "iTunes", absent → fallback.
-     */
     private fun extractSenderName(userAgent: String?): String {
         if (userAgent.isNullOrBlank()) return DEFAULT_SENDER_NAME
         val name = userAgent.substringBefore("/").trim()
         return name.ifEmpty { DEFAULT_SENDER_NAME }
     }
 
-    /**
-     * Handles SETUP — allocates a media channel.
-     * Responds with TCP interleaved transport for video, UDP for audio.
-     */
     open fun handleSetupInternal(request: RtspRequest): RtspResponse {
         setupCount++
         val session = currentSession
-
-        // Determine if this SETUP is for video or audio based on order and session info
         val isVideoSetup = setupCount == 1 && session?.hasVideo == true
 
         val transport = if (isVideoSetup) {
-            // Video: interleaved over the existing RTSP TCP connection
             "RTP/AVP/TCP;unicast;interleaved=0-1"
         } else {
-            // Audio: UDP to the fixed port; timing-port tells the sender where to send NTP probes
             "RTP/AVP/UDP;unicast;" +
             "client_port=$AUDIO_RTP_PORT-${AUDIO_RTP_PORT + 1};" +
             "server_port=$AUDIO_RTP_PORT-${AUDIO_RTP_PORT + 1};" +
@@ -484,13 +354,6 @@ open class RtspHandler(
         )
     }
 
-    /**
-     * Handles RECORD — macOS/iOS says "start sending media now".
-     *
-     * Invokes [onStreamingStarted] with the parsed [SessionDescription] so the caller
-     * can wire up [VideoDecoder] and/or [AudioPlayer] as appropriate.
-     * For audio-only streams, only [AudioPlayer] is started.
-     */
     open fun handleRecordInternal(request: RtspRequest): RtspResponse {
         val session = currentSession
         if (session == null) {
@@ -502,67 +365,33 @@ open class RtspHandler(
         return RtspResponse(statusCode = 200, statusMessage = "OK")
     }
 
-    /**
-     * Handles TEARDOWN — macOS says "stop and clean up".
-     *
-     * The streaming session is over. We clean up resources and return to WAITING state.
-     */
     open fun handleTeardownInternal(request: RtspRequest): RtspResponse {
         Logger.i("TEARDOWN received — streaming stopping")
         onStreamingStopped()
         return RtspResponse(statusCode = 200, statusMessage = "OK")
     }
 
-    /**
-     * Handles GET_PARAMETER — used by macOS as a keep-alive ping.
-     * We respond with 200 OK and an empty body.
-     */
-    private fun handleGetParameter(request: RtspRequest): RtspResponse {
-        return RtspResponse(statusCode = 200, statusMessage = "OK")
-    }
+    private fun handleGetParameter(): RtspResponse =
+        RtspResponse(statusCode = 200, statusMessage = "OK")
 
-    /**
-     * Handles SET_PARAMETER — macOS may send metadata (volume, track info, etc.).
-     * We acknowledge receipt but currently ignore the content.
-     */
     private fun handleSetParameter(request: RtspRequest): RtspResponse {
         Logger.d("SET_PARAMETER: ${request.body}")
         return RtspResponse(statusCode = 200, statusMessage = "OK")
     }
 
-    /**
-     * Handles any unrecognized RTSP method.
-     * Returns 501 Not Implemented, which is the correct RTSP response for unknown methods.
-     */
     open fun handleUnknownInternal(request: RtspRequest): RtspResponse {
         Logger.w("Unknown RTSP method: ${request.method}")
         return RtspResponse(statusCode = 501, statusMessage = "Not Implemented")
     }
 
-    /** Handles FLUSH — macOS requests we discard buffered media data (seek/pause). */
-    private fun handleFlush(request: RtspRequest): RtspResponse {
-        return RtspResponse(statusCode = 200, statusMessage = "OK")
-    }
+    private fun handleFlush(): RtspResponse =
+        RtspResponse(statusCode = 200, statusMessage = "OK")
 
-    /** Handles PAUSE — suspends media delivery. Responds 200 OK; resume arrives as RECORD. */
     open fun handlePauseInternal(request: RtspRequest): RtspResponse {
         Logger.d("PAUSE received")
         return RtspResponse(statusCode = 200, statusMessage = "OK")
     }
 
-    /**
-     * Sends an RTSP response to the client.
-     *
-     * RTSP response format:
-     *   RTSP/1.0 <statusCode> <statusMessage>\r\n
-     *   CSeq: <n>\r\n
-     *   <header>: <value>\r\n
-     *   \r\n
-     *   [optional body]
-     *
-     * @param writer The output writer to the client socket.
-     * @param response The [RtspResponse] to serialize and send.
-     */
     private fun sendResponse(outputStream: OutputStream, protocol: String, response: RtspResponse) {
         val bodyBytes = response.bodyBytes
         val sb = StringBuilder()
@@ -583,12 +412,6 @@ open class RtspHandler(
         outputStream.flush()
     }
 
-    /**
-     * Sends a 503 Service Unavailable response to a client that connected while
-     * another session is already active (enforcing FR-07: one sender at a time).
-     *
-     * @param socket The socket of the rejected client.
-     */
     private fun sendServiceUnavailable(socket: Socket) {
         try {
             val response = "RTSP/1.0 503 Service Unavailable\r\nCSeq: 0\r\n\r\n"
@@ -604,33 +427,10 @@ open class RtspHandler(
             "RECORD", "TEARDOWN", "FLUSH", "GET_PARAMETER", "SET_PARAMETER", "OPTIONS"
         )
 
-        /** Standard AirPlay RTSP port. */
         private const val RTSP_PORT = 7000
-
-        /**
-         * Maximum allowed RTSP message size (security: prevents DoS via huge messages).
-         *
-         * 2 MB cap: SET_PARAMETER carries cover-art / video-thumbnail JPEGs in
-         * the AirPlay metadata stream, and YouTube on iOS routinely sends
-         * 96–300 KB thumbnails. The original 64 KB ceiling killed those mid-
-         * stream — the parser then tried to read the JPEG payload as the next
-         * RTSP request line, broke, and torpedoed the whole session before
-         * audio could start flowing. 2 MB is comfortably above what any
-         * legitimate sender sends while still bounding pathological inputs.
-         */
         private const val MAX_MESSAGE_BYTES = 2 * 1024 * 1024
-
-        /** Fixed session ID — one session at a time. */
         private const val SESSION_ID = "PhairPlaySession"
-
-        /**
-         * UDP port for receiving audio RTP packets.
-         * Must match [AirPlayReceiver.AUDIO_RTP_PORT] — both values must be kept in sync.
-         * We keep a separate const here to avoid a circular compile-time dependency.
-         */
         private const val AUDIO_RTP_PORT = 6001
-
-        /** Fallback sender name when User-Agent header is absent or unparseable. */
         private const val DEFAULT_SENDER_NAME = "AirPlay Sender"
     }
 }
