@@ -21,6 +21,16 @@ object CalendarPreferences {
     fun getWorkUrl(context: Context): String =
         SecureCalendarStore.get(context, KEY_WORK_URL)
 
+    /** Personal events can come from either the provisioned Google API or an ICS fallback. */
+    fun isPersonalConfigured(context: Context): Boolean =
+        GoogleCalendarClient.isConfigured || getPersonalUrl(context).isNotBlank()
+
+    fun isWorkConfigured(context: Context): Boolean =
+        getWorkUrl(context).isNotBlank()
+
+    fun hasConfiguredSource(context: Context): Boolean =
+        isPersonalConfigured(context) || isWorkConfigured(context)
+
     fun setUrl(context: Context, key: String, value: String) {
         require(key == KEY_PERSONAL_URL || key == KEY_WORK_URL)
         SecureCalendarStore.put(context, key, value)
