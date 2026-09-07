@@ -16,17 +16,15 @@ object CalendarPreferences {
     }
 
     fun getPersonalUrl(context: Context): String =
-        url(context, KEY_PERSONAL_URL)
+        SecureCalendarStore.get(context, KEY_PERSONAL_URL)
 
     fun getWorkUrl(context: Context): String =
-        url(context, KEY_WORK_URL)
+        SecureCalendarStore.get(context, KEY_WORK_URL)
+
+    fun setUrl(context: Context, key: String, value: String) {
+        require(key == KEY_PERSONAL_URL || key == KEY_WORK_URL)
+        SecureCalendarStore.put(context, key, value)
+    }
 
     fun pollIntervalMs(): Long = POLL_MS
-
-    private fun url(context: Context, key: String): String {
-        return PreferenceManager.getDefaultSharedPreferences(context)
-            .getString(key, "")
-            ?.trim()
-            .orEmpty()
-    }
 }
