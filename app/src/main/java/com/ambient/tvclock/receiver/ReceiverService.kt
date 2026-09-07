@@ -1,5 +1,6 @@
 package com.ambient.tvclock.receiver
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -329,6 +330,7 @@ class ReceiverService : Service() {
             .build()
     }
 
+    @SuppressLint("NotificationPermission")
     private fun updateNotification(isRunning: Boolean, streamingSenderName: String? = null) {
         val contentText = streamingSenderName?.let {
             getString(R.string.notification_status_streaming, it)

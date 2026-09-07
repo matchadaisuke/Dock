@@ -5,41 +5,55 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 object CalendarRefresh {
     private const val TAG = "CalendarRefresh"
     private val mainHandler = Handler(Looper.getMainLooper())
-
-    // One persistent daemon thread services every refresh — receiver pings,
-    // poller ticks, and settings refreshes all coalesce here instead of
-    // allocating a fresh OS thread per call.
+    private val refreshInFlight = AtomicBoolean(false)
     private val executor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "calendar-fetch").apply { isDaemon = true }
     }
 
     fun publishAsync(context: Context) {
+        if (!refreshInFlight.compareAndSet(false, true)) return
         val app = context.applicationContext
         executor.execute {
-            val snapshot = try {
+            val previous = CalendarCenter.current
+            val refreshed = try {
                 CalendarRepository.refresh(app)
             } catch (e: Exception) {
                 Log.e(TAG, "Refresh crashed: ${e.message}", e)
-                val previous = CalendarCenter.current
                 CalendarSnapshot(
-                    // Keep the last known-good payload visible, but do not lie
-                    // that this failed refresh produced fresh data.
-                    events = previous.events,
-                    lastUpdatedMillis = previous.lastUpdatedMillis,
+                    events = emptyList(),
+                    lastUpdatedMillis = System.currentTimeMillis(),
                     errorMessage = "更新処理エラー: ${e.javaClass.simpleName}${e.message?.let { ": $it" }.orEmpty()}",
-                    nextAfterToday = previous.nextAfterToday,
-                    failedSources = if (CalendarPreferences.isConfigured(app)) {
-                        setOf(CalendarSource.PERSONAL)
-                    } else {
-                        emptySet()
-                    },
+                    failedSources = if (CalendarPreferences.isConfigured(app)) setOf(CalendarSource.PERSONAL) else emptySet(),
                 )
             }
-            mainHandler.post { CalendarCenter.update(snapshot) }
+
+            val snapshot = retainLastGoodOnFailure(refreshed, previous)
+            mainHandler.post {
+                try {
+                    CalendarCenter.update(snapshot)
+                } finally {
+                    refreshInFlight.set(false)
+                }
+            }
         }
+    }
+
+    internal fun retainLastGoodOnFailure(
+        refreshed: CalendarSnapshot,
+        previous: CalendarSnapshot,
+    ): CalendarSnapshot {
+        if (refreshed.failedSources.isEmpty() || refreshed.events.isNotEmpty() || previous.events.isEmpty()) {
+            return refreshed
+        }
+        return refreshed.copy(
+            events = previous.events,
+            lastUpdatedMillis = previous.lastUpdatedMillis,
+            nextAfterToday = previous.nextAfterToday,
+        )
     }
 }

@@ -1,0 +1,6 @@
+Dock 1.2.0 JA Security Build 6
+- Resume interrupted large iCal responses with HTTP Range.
+- Validate complete VCALENDAR payloads before parsing.
+- Keep last successful events visible when a refresh fails.
+- Coalesce duplicate refresh requests.
+- Remove non-clock/calendar runtime components and settings.
