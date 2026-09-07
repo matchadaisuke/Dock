@@ -1,2 +1,3 @@
 
 - iCal download now retries premature EOF / truncated-response failures up to two times before reporting the connection was cut.
+- Fixed the retry-loop compilation issue found by release CI.
