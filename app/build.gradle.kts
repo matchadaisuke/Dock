@@ -34,8 +34,8 @@ android {
         applicationId = "com.ambient.tvclock"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10200
-        versionName = "1.2.0"
+        versionCode = 10201
+        versionName = "1.2.0-ja-sec1"
         buildConfigField("String", "SPOTIFY_CLIENT_ID", "\"$spotifyClientId\"")
         buildConfigField("String", "UNSPLASH_ACCESS_KEY", "\"$unsplashAccessKey\"")
         buildConfigField("String", "GOOGLE_OAUTH_CLIENT_ID", "\"$googleOauthClientId\"")
@@ -82,8 +82,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Never silently fall back to Android's well-known debug key.
+            // Release automation must explicitly provide a signing keystore.
             signingConfig = signingConfigs.findByName("release")
-                ?: signingConfigs.getByName("debug")
         }
     }
 
@@ -114,9 +115,6 @@ android {
     }
 
     lint {
-        // CI gates on *new* problems. The baseline records what was already
-        // here when the gate went in, so existing debt is visible and tracked
-        // rather than silently suppressed — delete an entry as you fix it.
         baseline = file("lint-baseline.xml")
         abortOnError = true
     }
@@ -148,9 +146,6 @@ dependencies {
     implementation("com.googlecode.plist:dd-plist:1.28")
     implementation("com.squareup.okhttp3:okhttp:4.11.0")
 
-    // ExoPlayer + HLS — drives AirPlay direct-video playback (POST /play HLS URLs
-    // sent by YouTube, Photos, Safari, Netflix when the user taps the AirPlay icon
-    // on a specific video instead of mirroring the whole screen).
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
 
@@ -159,10 +154,6 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("io.mockk:mockk:1.13.10")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
-    // org.json ships inside android.jar, which unit tests only see as a stub
-    // (every method returns a default). A real implementation on the test
-    // classpath lets JSON parsing be tested on the JVM, no device needed.
     testImplementation("org.json:json:20240303")
-    // Drives the sync client against a real socket without a real server.
     testImplementation("com.squareup.okhttp3:mockwebserver:4.11.0")
 }
