@@ -156,7 +156,7 @@ class AirPlayControlHandler(
         val contentType = request.headers["Content-Type"] ?: request.headers["content-type"]
 
         if (contentType?.contains("apple-binary-plist") == true && request.bodyBytes.isNotEmpty()) {
-            return handleInfoQualifier(request, dict)
+            return handleInfoQualifier(dict)
         }
 
         val mac = NetworkUtils.getMacAddress().uppercase()
@@ -183,7 +183,7 @@ class AirPlayControlHandler(
         return plistResponse(dict)
     }
 
-    private fun handleInfoQualifier(request: RtspRequest, dict: NSDictionary): RtspResponse {
+    private fun handleInfoQualifier(dict: NSDictionary): RtspResponse {
         // Initial GET/info with qualifier txtAirPlay — return mDNS TXT blob
         val txt = buildAirPlayTxtRecord().toByteArray(Charsets.UTF_8)
         dict.put("txtAirPlay", NSData(txt))
@@ -608,7 +608,7 @@ object AirPlaySetupParser {
     }
 
     fun logRequest(root: NSDictionary) {
-        val keys = (0 until root.count()).mapNotNull { root.allKeys()[it] as? String }
+        val keys = (0 until root.count()).map { root.allKeys()[it] }
         Logger.i("SETUP request keys: ${keys.joinToString()}")
         (root.objectForKey("timingPort") as? NSNumber)?.let {
             Logger.i("SETUP client timingPort=${it.intValue()}")
