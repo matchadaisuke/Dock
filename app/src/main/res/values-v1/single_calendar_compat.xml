@@ -5,4 +5,5 @@
     <string name="deck_personal">Calendar</string>
     <string name="deck_quiet_personal_title">Nothing scheduled</string>
     <string name="deck_quiet_personal_subtitle">Your day is clear</string>
+    <string name="calendar_partial_fetch_error">Calendar could not be updated</string>
 </resources>
