@@ -5,4 +5,5 @@
     <string name="deck_personal">カレンダー</string>
     <string name="deck_quiet_personal_title">予定はありません</string>
     <string name="deck_quiet_personal_subtitle">今日の予定は空いています</string>
+    <string name="calendar_partial_fetch_error">カレンダーを更新できませんでした</string>
 </resources>
