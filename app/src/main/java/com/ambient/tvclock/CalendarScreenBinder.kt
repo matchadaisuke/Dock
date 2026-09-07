@@ -4,9 +4,6 @@ import android.view.View
 import android.widget.TextView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Locale
 
 class CalendarScreenBinder(private val root: View) {
 
@@ -15,8 +12,6 @@ class CalendarScreenBinder(private val root: View) {
     private val textFooter: TextView = root.findViewById(R.id.textCalendarFooter)
     private val recycler: RecyclerView = root.findViewById(R.id.recyclerCalendarEvents)
     private val adapter = CalendarEventAdapter(root.context)
-
-    private val dateFormatter = SimpleDateFormat("EEEE, MMMM d, yyyy", Locale.getDefault())
 
     // True on first bind and whenever the user navigates back to the Calendar
     // page; consumed after the next data bind so we don't fight the user's
@@ -40,7 +35,7 @@ class CalendarScreenBinder(private val root: View) {
         recycler.canScrollVertically(1) || recycler.canScrollVertically(-1)
 
     fun updateDateLine() {
-        textDate.text = dateFormatter.format(Calendar.getInstance().time)
+        textDate.text = LocalizedDateTime.formatCalendarDate(root.context, System.currentTimeMillis())
     }
 
     /**
@@ -66,9 +61,10 @@ class CalendarScreenBinder(private val root: View) {
             return
         }
 
-        if (CalendarPreferences.getPersonalUrl(context).isBlank() &&
-            CalendarPreferences.getWorkUrl(context).isBlank()
-        ) {
+        // Google Calendar API credentials are a valid personal-calendar source
+        // even when no ICS URL is stored. Keep this decision shared with the
+        // repository/home deck instead of treating URL presence as configuration.
+        if (!CalendarPreferences.hasConfiguredSource(context)) {
             latestEvents = emptyList()
             adapter.submit(emptyList(), now)
             textFooter.text = context.getString(R.string.calendar_add_in_settings)
@@ -80,10 +76,12 @@ class CalendarScreenBinder(private val root: View) {
         textFooter.text = when {
             snapshot.errorMessage != null && snapshot.events.isEmpty() ->
                 context.getString(R.string.calendar_fetch_error)
+            snapshot.events.isEmpty() ->
+                context.getString(R.string.calendar_no_events)
             snapshot.lastUpdatedMillis > 0 ->
                 context.getString(
                     R.string.calendar_last_updated,
-                    CalendarDisplayHelper.formatUpdated(snapshot.lastUpdatedMillis)
+                    CalendarDisplayHelper.formatUpdated(context, snapshot.lastUpdatedMillis)
                 )
             else -> ""
         }
