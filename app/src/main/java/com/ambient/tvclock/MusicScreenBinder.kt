@@ -673,7 +673,7 @@ class MusicScreenBinder(
         lastBackgroundBitmap = art
         blurExecutor.execute {
             val blurred = try {
-                AlbumArtBlur.blur(art!!)
+                AlbumArtBlur.blur(art)
             } catch (_: Exception) {
                 null
             }

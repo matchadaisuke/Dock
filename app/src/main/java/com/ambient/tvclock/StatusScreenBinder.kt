@@ -1,13 +1,11 @@
 package com.ambient.tvclock
 
 import android.content.res.ColorStateList
-import android.graphics.PorterDuff
 import android.view.View
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import com.ambient.tvclock.receiver.ActiveConnection
 import com.ambient.tvclock.receiver.Protocol
-import com.ambient.tvclock.vpn.VpnPreferences
 import com.ambient.tvclock.vpn.VpnState
 
 /**
@@ -124,7 +122,7 @@ class StatusScreenBinder(
 
     private fun tint(dot: View, halo: View, colorRes: Int) {
         val color = ContextCompat.getColor(root.context, colorRes)
-        dot.background?.mutate()?.setColorFilter(color, PorterDuff.Mode.SRC_IN)
+        dot.background?.mutate()?.setTint(color)
         halo.backgroundTintList = ColorStateList.valueOf(haloTint(color))
     }
 

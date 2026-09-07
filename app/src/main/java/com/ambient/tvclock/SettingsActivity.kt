@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.preference.EditTextPreference
 import androidx.preference.MultiSelectListPreference
 import androidx.preference.Preference
@@ -14,7 +15,6 @@ import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.SwitchPreferenceCompat
 import com.ambient.tvclock.grainstorm.WallpaperSettings
 import com.ambient.tvclock.receiver.ReceiverController
-import androidx.lifecycle.lifecycleScope
 import com.ambient.tvclock.vpn.ConfigImportActivity
 import com.ambient.tvclock.vpn.VpnOverlayService
 import com.ambient.tvclock.vpn.VpnPreferences
@@ -93,17 +93,17 @@ class SettingsActivity : AppCompatActivity() {
                     true
                 }
 
-            findPreference<EditTextPreference>(CalendarPreferences.KEY_PERSONAL_URL)
-                ?.setOnPreferenceChangeListener { _, _ ->
-                    CalendarPoller(requireContext()).publishNow()
-                    true
-                }
-
-            findPreference<EditTextPreference>(CalendarPreferences.KEY_WORK_URL)
-                ?.setOnPreferenceChangeListener { _, _ ->
-                    CalendarPoller(requireContext()).publishNow()
-                    true
-                }
+            val calendarStore = CalendarPreferenceDataStore(requireContext().applicationContext)
+            wireCalendarUrlPreference(
+                CalendarPreferences.KEY_PERSONAL_URL,
+                calendarStore,
+                R.string.pref_personal_calendar_url_summary,
+            )
+            wireCalendarUrlPreference(
+                CalendarPreferences.KEY_WORK_URL,
+                calendarStore,
+                R.string.pref_work_calendar_url_summary,
+            )
 
             findPreference<Preference>("grant_notification_access")?.setOnPreferenceClickListener {
                 val context = requireContext()
@@ -145,6 +145,40 @@ class SettingsActivity : AppCompatActivity() {
             WallpaperSettings.wire(this)
         }
 
+        private fun wireCalendarUrlPreference(
+            key: String,
+            dataStore: CalendarPreferenceDataStore,
+            summaryRes: Int,
+        ) {
+            val preference = findPreference<EditTextPreference>(key) ?: return
+            preference.preferenceDataStore = dataStore
+            // The preference was inflated before its encrypted data store was
+            // attached, so explicitly load the migrated secure value now.
+            preference.text = SecureCalendarStore.get(requireContext(), key)
+            // Never render a secret iCal URL as a TV settings-row summary.
+            preference.summaryProvider = null
+            preference.setSummary(summaryRes)
+            preference.setOnPreferenceChangeListener { _, newValue ->
+                val candidate = (newValue as? String)?.trim().orEmpty()
+                if (!CalendarUrlPolicy.isAllowed(candidate)) {
+                    Toast.makeText(
+                        requireContext(),
+                        R.string.calendar_https_required,
+                        Toast.LENGTH_LONG,
+                    ).show()
+                    false
+                } else {
+                    // Preference persistence happens after this callback returns;
+                    // schedule the refresh on the next UI-loop turn so it sees
+                    // the newly encrypted value rather than the previous one.
+                    requireActivity().window.decorView.post {
+                        CalendarPoller(requireContext().applicationContext).publishNow()
+                    }
+                    true
+                }
+            }
+        }
+
         private fun wireShuffleNow() {
             findPreference<Preference>("background_shuffle_now")?.setOnPreferenceClickListener {
                 val ctx = requireContext()
@@ -174,10 +208,9 @@ class SettingsActivity : AppCompatActivity() {
                         getString(R.string.background_keywords_locked_toast, formatRemaining(remaining)),
                         Toast.LENGTH_LONG,
                     ).show()
-                    false // reject the change; preference value is rolled back
+                    false
                 } else {
                     BackgroundPreferences.markKeywordsChanged(ctx)
-                    // Refresh both summaries so the sibling preference also locks.
                     refreshKeywordLockSummaries()
                     true
                 }
@@ -201,7 +234,6 @@ class SettingsActivity : AppCompatActivity() {
             } else {
                 presets?.isEnabled = true
                 custom?.isEnabled = true
-                // Restore the default summary providers' output.
                 presets?.summary = getString(R.string.pref_background_keyword_presets_summary)
                 custom?.summary = custom?.text?.takeIf { it.isNotBlank() }
                     ?: getString(R.string.pref_background_custom_keywords_summary)
@@ -231,7 +263,7 @@ class SettingsActivity : AppCompatActivity() {
                         val consent = VpnService.prepare(ctx)
                         if (consent != null) {
                             vpnConsentLauncher.launch(consent)
-                            false // wait for the launcher callback to flip the toggle
+                            false
                         } else {
                             VpnPreferences.setEnabled(ctx, true)
                             WireGuardController.start(ctx)
@@ -303,7 +335,6 @@ class SettingsActivity : AppCompatActivity() {
                     is VpnState.Error -> getString(R.string.pref_vpn_status_error, s.message)
                 }
             }
-            // Gate Enable VPN + Clear config rows on whether we have a config.
             findPreference<SwitchPreferenceCompat>(VpnPreferences.KEY_VPN_ENABLED)?.isEnabled = hasConfig
             findPreference<Preference>("vpn_clear_config")?.isEnabled = hasConfig
         }

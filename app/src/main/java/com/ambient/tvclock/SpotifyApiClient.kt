@@ -347,12 +347,12 @@ object SpotifyApiClient {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Playlists request failed: ${e.message}")
-                return PlaylistsResult(finalisePlaylists(context, token, collected, myUserId), -1)
+                return PlaylistsResult(finalisePlaylists(token, collected, myUserId), -1)
             }
             if (hitError || offset == Int.MAX_VALUE) break
         }
         return PlaylistsResult(
-            finalisePlaylists(context, token, collected, myUserId),
+            finalisePlaylists(token, collected, myUserId),
             pageCode
         )
     }
@@ -364,7 +364,6 @@ object SpotifyApiClient {
      * /v1/me — keep the full list rather than blank the UI.
      */
     private fun finalisePlaylists(
-        context: Context,
         token: String,
         collected: List<SpotifyPlaylist>,
         myUserId: String?

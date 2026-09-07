@@ -98,11 +98,11 @@ object AirPlayNetwork {
         return scopeIdFromSocket(fromSocket) ?: -1
     }
 
-    private fun scopeIdFromSocket(socket: Socket?): Int {
-        if (socket == null) return -1
-        val local = socket.localAddress
-        if (local is Inet6Address && local.scopeId != 0) return local.scopeId
-        return -1
+    private fun scopeIdFromSocket(socket: Socket?): Int? {
+        val local = socket?.localAddress ?: return null
+        return (local as? Inet6Address)
+            ?.scopeId
+            ?.takeIf { it > 0 }
     }
 
     private fun scopedIpv6(hostWithoutZone: String, scopeId: Int): Inet6Address {
