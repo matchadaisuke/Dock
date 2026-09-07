@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pref_status_title">Status</string>
+    <string name="calendar_https_required">Kalender-URLs müssen HTTPS verwenden.</string>
+    <string name="setup_web_pin_explanation">Gib die auf dem Fernseher angezeigte PIN ein, bevor gespeicherte Einstellungen angezeigt werden.</string>
+    <string name="setup_web_unlock">Einstellungen entsperren</string>
+    <string name="setup_web_save">Auf dem Fernseher speichern</string>
+</resources>
