@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pref_status_title">État</string>
+    <string name="calendar_https_required">Les URL de calendrier doivent utiliser HTTPS.</string>
+    <string name="setup_web_pin_explanation">Saisissez le code PIN affiché sur le téléviseur avant d’afficher les réglages enregistrés.</string>
+    <string name="setup_web_unlock">Déverrouiller les réglages</string>
+    <string name="setup_web_save">Enregistrer sur le téléviseur</string>
+</resources>
