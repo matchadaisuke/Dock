@@ -67,7 +67,7 @@ class CalendarScreenBinder(private val root: View) {
         if (!CalendarPreferences.hasConfiguredSource(context)) {
             latestEvents = emptyList()
             adapter.submit(emptyList(), now)
-            textFooter.text = context.getString(R.string.calendar_add_in_settings)
+            textFooter.text = context.getString(R.string.calendar_add_source_in_settings)
             return
         }
 
