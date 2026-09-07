@@ -35,10 +35,12 @@ object CalendarRepository {
         val previewEnd = cal.timeInMillis
 
         val merged = mutableListOf<CalendarEvent>()
-        var fetchFailed = false
+        val failedSources = mutableSetOf<CalendarSource>()
 
         // Personal: Google Calendar API when provisioned (real colors, RSVP,
         // attendees, server-side recurrence expansion), else the ICS feed.
+        // If the API fails and an ICS fallback exists, use it before surfacing
+        // an error. A successful fallback is a successful personal source.
         val apiEvents = if (googleApi) {
             GoogleCalendarClient.fetchEvents(startOfDay, previewEnd)
         } else {
@@ -46,13 +48,18 @@ object CalendarRepository {
         }
         when {
             apiEvents != null -> merged.addAll(apiEvents)
-            googleApi && personalUrl.isBlank() -> fetchFailed = true
-            personalUrl.isNotBlank() ->
-                mergeFeed(personalUrl, CalendarSource.PERSONAL, merged).also { if (!it) fetchFailed = true }
+            personalUrl.isNotBlank() -> {
+                if (!mergeFeed(personalUrl, CalendarSource.PERSONAL, merged)) {
+                    failedSources.add(CalendarSource.PERSONAL)
+                }
+            }
+            googleApi -> failedSources.add(CalendarSource.PERSONAL)
         }
 
         if (workUrl.isNotBlank()) {
-            mergeFeed(workUrl, CalendarSource.WORK, merged).also { if (!it) fetchFailed = true }
+            if (!mergeFeed(workUrl, CalendarSource.WORK, merged)) {
+                failedSources.add(CalendarSource.WORK)
+            }
         }
 
         // Expand across the whole preview window in one pass; today's list
@@ -61,6 +68,14 @@ object CalendarRepository {
             RruleExpander.expand(merged.sortedBy { it.startMillis }, startOfDay, previewEnd)
         } catch (e: Exception) {
             Log.e(TAG, "Expand failed: ${e.message}", e)
+            // Recurrence expansion is part of source interpretation. Do not
+            // present an empty result as a trustworthy "nothing scheduled".
+            if (CalendarPreferences.isPersonalConfigured(context)) {
+                failedSources.add(CalendarSource.PERSONAL)
+            }
+            if (CalendarPreferences.isWorkConfigured(context)) {
+                failedSources.add(CalendarSource.WORK)
+            }
             merged.sortedBy { it.startMillis }
         }
 
@@ -75,13 +90,14 @@ object CalendarRepository {
                 ?.let { source to it }
         }.toMap()
 
-        Log.i(TAG, "Today events: ${today.size} (fetchFailed=$fetchFailed)")
+        Log.i(TAG, "Today events: ${today.size} (failedSources=$failedSources)")
 
         return CalendarSnapshot(
             events = today,
             lastUpdatedMillis = System.currentTimeMillis(),
-            errorMessage = if (fetchFailed && today.isEmpty()) "error" else null,
-            nextAfterToday = nextAfterToday
+            errorMessage = if (failedSources.isNotEmpty()) "error" else null,
+            nextAfterToday = nextAfterToday,
+            failedSources = failedSources.toSet(),
         )
     }
 
@@ -92,7 +108,7 @@ object CalendarRepository {
             true
         } catch (e: Exception) {
             Log.e(TAG, "Parse failed for $source: ${e.message}", e)
-            merged.isNotEmpty()
+            false
         }
     }
 
