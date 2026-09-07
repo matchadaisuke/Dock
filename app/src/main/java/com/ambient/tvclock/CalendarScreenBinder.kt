@@ -75,9 +75,13 @@ class CalendarScreenBinder(private val root: View) {
         adapter.submit(snapshot.events, now)
         textFooter.text = when {
             snapshot.failedSources.isNotEmpty() && snapshot.events.isEmpty() ->
-                context.getString(R.string.calendar_fetch_error)
+                snapshot.errorMessage?.let {
+                    context.getString(R.string.calendar_fetch_error_detail, it)
+                } ?: context.getString(R.string.calendar_fetch_error)
             snapshot.failedSources.isNotEmpty() ->
-                context.getString(R.string.calendar_partial_fetch_error)
+                snapshot.errorMessage?.let {
+                    context.getString(R.string.calendar_partial_fetch_error_detail, it)
+                } ?: context.getString(R.string.calendar_partial_fetch_error)
             snapshot.events.isEmpty() ->
                 context.getString(R.string.calendar_no_events)
             snapshot.lastUpdatedMillis > 0 ->

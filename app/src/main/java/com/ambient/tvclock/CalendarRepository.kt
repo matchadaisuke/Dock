@@ -35,6 +35,7 @@ object CalendarRepository {
 
         val merged = mutableListOf<CalendarEvent>()
         val failedSources = mutableSetOf<CalendarSource>()
+        var failureDetail: String? = null
 
         // There is one logical calendar. Prefer the provisioned Google API when
         // available because it carries richer metadata; the single iCal URL is
@@ -47,11 +48,16 @@ object CalendarRepository {
         when {
             apiEvents != null -> merged.addAll(apiEvents)
             calendarUrl.isNotBlank() -> {
-                if (!mergeFeed(calendarUrl, merged, startOfDay, previewEnd)) {
+                val failure = mergeFeed(calendarUrl, merged, startOfDay, previewEnd)
+                if (failure != null) {
                     failedSources.add(CalendarSource.PERSONAL)
+                    failureDetail = failure
                 }
             }
-            googleApi -> failedSources.add(CalendarSource.PERSONAL)
+            googleApi -> {
+                failedSources.add(CalendarSource.PERSONAL)
+                failureDetail = "Google Calendar APIから予定を取得できませんでした"
+            }
         }
 
         // Expand across the whole preview window in one pass; today's list and
@@ -63,6 +69,7 @@ object CalendarRepository {
             if (CalendarPreferences.isConfigured(context)) {
                 failedSources.add(CalendarSource.PERSONAL)
             }
+            failureDetail = "繰り返し予定の展開に失敗しました: ${e.javaClass.simpleName}"
             merged.sortedBy { it.startMillis }
         }
 
@@ -80,7 +87,7 @@ object CalendarRepository {
         return CalendarSnapshot(
             events = today,
             lastUpdatedMillis = System.currentTimeMillis(),
-            errorMessage = if (failedSources.isNotEmpty()) "error" else null,
+            errorMessage = if (failedSources.isNotEmpty()) failureDetail ?: "原因不明のエラー" else null,
             nextAfterToday = nextAfterToday,
             failedSources = failedSources.toSet(),
         )
@@ -91,8 +98,9 @@ object CalendarRepository {
         merged: MutableList<CalendarEvent>,
         windowStartMillis: Long,
         windowEndMillis: Long,
-    ): Boolean {
-        val body = IcalFetcher.fetch(url) ?: return false
+    ): String? {
+        val fetch = IcalFetcher.fetchDetailed(url)
+        val body = fetch.body ?: return fetch.failure ?: "iCalデータを取得できませんでした"
         return try {
             merged.addAll(
                 IcalParser.parse(
@@ -102,10 +110,10 @@ object CalendarRepository {
                     windowEndMillis,
                 )
             )
-            true
+            null
         } catch (e: Exception) {
             Log.e(TAG, "Parse failed: ${e.message}", e)
-            false
+            "iCal解析エラー: ${e.javaClass.simpleName}${e.message?.let { ": $it" }.orEmpty()}"
         }
     }
 

@@ -109,6 +109,8 @@
     <string name="calendar_source_work">Work</string>
     <string name="calendar_last_updated">Updated %1$s</string>
     <string name="calendar_fetch_error">Could not refresh calendar</string>
+    <string name="calendar_fetch_error_detail">Could not refresh calendar (%1$s)</string>
+    <string name="calendar_partial_fetch_error_detail">Some calendar data could not be refreshed (%1$s)</string>
 
     <!-- Split Decks home -->
     <string name="deck_personal">Personal</string>

@@ -2,6 +2,8 @@
 <resources>
     <string name="calendar_add_source_in_settings">Ajouter un calendrier dans les paramètres</string>
     <string name="calendar_partial_fetch_error">Certains calendriers n’ont pas pu être actualisés</string>
+    <string name="calendar_fetch_error_detail">Impossible d’actualiser le calendrier (%1$s)</string>
+    <string name="calendar_partial_fetch_error_detail">Certaines données du calendrier n’ont pas pu être actualisées (%1$s)</string>
 
     <plurals name="deck_event_count">
         <item quantity="one">%1$d ÉVÉNEMENT</item>

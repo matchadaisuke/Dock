@@ -30,7 +30,7 @@ object CalendarRefresh {
                     // that this failed refresh produced fresh data.
                     events = previous.events,
                     lastUpdatedMillis = previous.lastUpdatedMillis,
-                    errorMessage = "error",
+                    errorMessage = "更新処理エラー: ${e.javaClass.simpleName}${e.message?.let { ": $it" }.orEmpty()}",
                     nextAfterToday = previous.nextAfterToday,
                     failedSources = if (CalendarPreferences.isConfigured(app)) {
                         setOf(CalendarSource.PERSONAL)

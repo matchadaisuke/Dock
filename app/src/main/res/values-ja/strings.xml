@@ -100,6 +100,8 @@
     <string name="calendar_source_work">仕事</string>
     <string name="calendar_last_updated">%1$s に更新</string>
     <string name="calendar_fetch_error">カレンダーを更新できませんでした</string>
+    <string name="calendar_fetch_error_detail">カレンダーを更新できませんでした（%1$s）</string>
+    <string name="calendar_partial_fetch_error_detail">一部のカレンダーを更新できませんでした（%1$s）</string>
 
     <string name="deck_personal">個人</string>
     <string name="deck_work">仕事</string>
