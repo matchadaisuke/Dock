@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pref_calendar_url_title">カレンダーURL</string>
+    <string name="pref_calendar_url_summary">非公開のiCalまたはwebcal購読URL</string>
+</resources>

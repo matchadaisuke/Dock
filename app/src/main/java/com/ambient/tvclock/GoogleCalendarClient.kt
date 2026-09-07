@@ -64,7 +64,9 @@ object GoogleCalendarClient {
      * Fetch events across all selected calendars in [windowStartMillis,
      * windowEndMillis), expanded to single instances and sorted by start.
      * Declined events are dropped (matching Google Calendar's own emphasis).
-     * Returns null when the API is unreachable so the caller can fall back.
+     * Returns null when any required API request fails so the caller can use
+     * the configured ICS fallback instead of mistaking a network/API failure
+     * for a genuinely empty calendar.
      */
     fun fetchEvents(windowStartMillis: Long, windowEndMillis: Long): List<CalendarEvent>? {
         return try {
@@ -73,7 +75,9 @@ object GoogleCalendarClient {
             val calendars = fetchCalendarList(token) ?: return null
             val out = mutableListOf<CalendarEvent>()
             for (cal in calendars) {
-                fetchCalendarEvents(token, cal, colors, windowStartMillis, windowEndMillis, out)
+                if (!fetchCalendarEvents(token, cal, colors, windowStartMillis, windowEndMillis, out)) {
+                    return null
+                }
             }
             out.sortedBy { it.startMillis }
         } catch (e: Exception) {
@@ -146,6 +150,11 @@ object GoogleCalendarClient {
         return out
     }
 
+    /**
+     * Returns false if any page for this calendar fails. events.list can be
+     * paginated even for a narrow window, so follow nextPageToken rather than
+     * silently treating the first page as the whole calendar.
+     */
     private fun fetchCalendarEvents(
         token: String,
         cal: CalendarRef,
@@ -153,94 +162,109 @@ object GoogleCalendarClient {
         windowStartMillis: Long,
         windowEndMillis: Long,
         out: MutableList<CalendarEvent>
-    ) {
+    ): Boolean {
         val rfc3339 = DateTimeFormatter.ISO_OFFSET_DATE_TIME
         val zone = ZoneId.systemDefault()
         val timeMin = OffsetDateTime.ofInstant(Date(windowStartMillis).toInstant(), zone).format(rfc3339)
         val timeMax = OffsetDateTime.ofInstant(Date(windowEndMillis).toInstant(), zone).format(rfc3339)
-        val fields = "items(summary,start,end,location,colorId,status,transparency," +
+        val fields = "nextPageToken,items(summary,start,end,location,colorId,status,transparency," +
             "attendees(self,responseStatus),organizer(displayName,email),hangoutLink,eventType)"
-        val url = "$API/calendars/${java.net.URLEncoder.encode(cal.id, "UTF-8")}/events" +
-            "?singleEvents=true&orderBy=startTime&maxResults=100" +
+        val baseUrl = "$API/calendars/${java.net.URLEncoder.encode(cal.id, "UTF-8")}/events" +
+            "?singleEvents=true&orderBy=startTime&maxResults=2500" +
             "&timeMin=${java.net.URLEncoder.encode(timeMin, "UTF-8")}" +
             "&timeMax=${java.net.URLEncoder.encode(timeMax, "UTF-8")}" +
             "&fields=${java.net.URLEncoder.encode(fields, "UTF-8")}"
-        val json = getJson(token, url) ?: return
-        val items = json.optJSONArray("items") ?: return
 
-        for (i in 0 until items.length()) {
-            val item = items.getJSONObject(i)
-            if (item.optString("status") == "cancelled") continue
-            val title = item.optString("summary")
-            if (title.isBlank()) continue
+        var pageToken: String? = null
+        do {
+            val url = if (pageToken == null) {
+                baseUrl
+            } else {
+                "$baseUrl&pageToken=${java.net.URLEncoder.encode(pageToken, "UTF-8")}"
+            }
+            val json = getJson(token, url) ?: return false
+            val items = json.optJSONArray("items")
 
-            var myResponse: RsvpStatus? = null
-            var attendeeCount = 0
-            item.optJSONArray("attendees")?.let { attendees ->
-                attendeeCount = attendees.length()
-                for (a in 0 until attendees.length()) {
-                    val attendee = attendees.getJSONObject(a)
-                    if (attendee.optBoolean("self", false)) {
-                        myResponse = when (attendee.optString("responseStatus")) {
-                            "accepted" -> RsvpStatus.ACCEPTED
-                            "tentative" -> RsvpStatus.TENTATIVE
-                            "declined" -> RsvpStatus.DECLINED
-                            else -> RsvpStatus.NEEDS_ACTION
+            if (items != null) {
+                for (i in 0 until items.length()) {
+                    val item = items.getJSONObject(i)
+                    if (item.optString("status") == "cancelled") continue
+                    val title = item.optString("summary")
+                    if (title.isBlank()) continue
+
+                    var myResponse: RsvpStatus? = null
+                    var attendeeCount = 0
+                    item.optJSONArray("attendees")?.let { attendees ->
+                        attendeeCount = attendees.length()
+                        for (a in 0 until attendees.length()) {
+                            val attendee = attendees.getJSONObject(a)
+                            if (attendee.optBoolean("self", false)) {
+                                myResponse = when (attendee.optString("responseStatus")) {
+                                    "accepted" -> RsvpStatus.ACCEPTED
+                                    "tentative" -> RsvpStatus.TENTATIVE
+                                    "declined" -> RsvpStatus.DECLINED
+                                    else -> RsvpStatus.NEEDS_ACTION
+                                }
+                            }
                         }
                     }
+                    if (myResponse == RsvpStatus.DECLINED) continue
+
+                    val start = item.optJSONObject("start") ?: continue
+                    val end = item.optJSONObject("end")
+                    val allDay = start.has("date")
+                    val startMillis: Long
+                    val endMillis: Long
+                    try {
+                        if (allDay) {
+                            startMillis = LocalDate.parse(start.getString("date"))
+                                .atStartOfDay(zone).toInstant().toEpochMilli()
+                            // API end.date is exclusive; render as inclusive end-of-window.
+                            endMillis = end?.optString("date")?.ifBlank { null }
+                                ?.let { LocalDate.parse(it).atStartOfDay(zone).toInstant().toEpochMilli() }
+                                ?: (startMillis + 24 * 60 * 60 * 1000L)
+                        } else {
+                            startMillis = OffsetDateTime.parse(start.getString("dateTime"))
+                                .toInstant().toEpochMilli()
+                            endMillis = end?.optString("dateTime")?.ifBlank { null }
+                                ?.let { OffsetDateTime.parse(it).toInstant().toEpochMilli() }
+                                ?: (startMillis + 60 * 60 * 1000L)
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Skipping unparsable event time: ${e.message}")
+                        continue
+                    }
+
+                    out.add(
+                        CalendarEvent(
+                            title = title,
+                            startMillis = startMillis,
+                            endMillis = endMillis,
+                            isAllDay = allDay,
+                            location = item.optString("location"),
+                            source = CalendarSource.PERSONAL,
+                            busyStatus = if (item.optString("transparency") == "transparent") {
+                                BusyStatus.FREE
+                            } else {
+                                BusyStatus.BUSY
+                            },
+                            onlineMeetingUrl = item.optString("hangoutLink").ifBlank { null },
+                            organizer = item.optJSONObject("organizer")?.let { org ->
+                                org.optString("displayName").ifBlank { org.optString("email") }
+                            }?.ifBlank { null },
+                            colorHex = item.optString("colorId").ifBlank { null }
+                                ?.let { MODERN_EVENT_COLORS[it] ?: colors[it] } ?: cal.colorHex,
+                            myResponse = myResponse,
+                            attendeeCount = attendeeCount
+                        )
+                    )
                 }
             }
-            if (myResponse == RsvpStatus.DECLINED) continue
 
-            val start = item.optJSONObject("start") ?: continue
-            val end = item.optJSONObject("end")
-            val allDay = start.has("date")
-            val startMillis: Long
-            val endMillis: Long
-            try {
-                if (allDay) {
-                    startMillis = LocalDate.parse(start.getString("date"))
-                        .atStartOfDay(zone).toInstant().toEpochMilli()
-                    // API end.date is exclusive; render as inclusive end-of-window.
-                    endMillis = end?.optString("date")?.ifBlank { null }
-                        ?.let { LocalDate.parse(it).atStartOfDay(zone).toInstant().toEpochMilli() }
-                        ?: (startMillis + 24 * 60 * 60 * 1000L)
-                } else {
-                    startMillis = OffsetDateTime.parse(start.getString("dateTime"))
-                        .toInstant().toEpochMilli()
-                    endMillis = end?.optString("dateTime")?.ifBlank { null }
-                        ?.let { OffsetDateTime.parse(it).toInstant().toEpochMilli() }
-                        ?: (startMillis + 60 * 60 * 1000L)
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Skipping unparsable event time: ${e.message}")
-                continue
-            }
+            pageToken = json.optString("nextPageToken").ifBlank { null }
+        } while (pageToken != null)
 
-            out.add(
-                CalendarEvent(
-                    title = title,
-                    startMillis = startMillis,
-                    endMillis = endMillis,
-                    isAllDay = allDay,
-                    location = item.optString("location"),
-                    source = CalendarSource.PERSONAL,
-                    busyStatus = if (item.optString("transparency") == "transparent") {
-                        BusyStatus.FREE
-                    } else {
-                        BusyStatus.BUSY
-                    },
-                    onlineMeetingUrl = item.optString("hangoutLink").ifBlank { null },
-                    organizer = item.optJSONObject("organizer")?.let { org ->
-                        org.optString("displayName").ifBlank { org.optString("email") }
-                    }?.ifBlank { null },
-                    colorHex = item.optString("colorId").ifBlank { null }
-                        ?.let { MODERN_EVENT_COLORS[it] ?: colors[it] } ?: cal.colorHex,
-                    myResponse = myResponse,
-                    attendeeCount = attendeeCount
-                )
-            )
-        }
+        return true
     }
 
     private fun getJson(token: String, url: String): JSONObject? {

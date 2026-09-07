@@ -20,10 +20,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
-import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Date
-import java.util.Locale
 
 /**
  * Binds the Split Decks home screen: a compact clock, a priority "stage"
@@ -110,13 +107,6 @@ class HomeScreenBinder(private val root: View) {
 
     private enum class StageMode { NONE, MEETING, MUSIC, NEXT }
 
-    private val eyebrowFormatter = SimpleDateFormat("EEE · MMM d", Locale.getDefault())
-    private val timeFormatter = SimpleDateFormat("h:mm", Locale.getDefault())
-    private val secondsFormatter = SimpleDateFormat(":ss", Locale.getDefault())
-    private val amPmFormatter = SimpleDateFormat("a", Locale.getDefault())
-    private val rowTimeFormatter = SimpleDateFormat("h:mm a", Locale.getDefault())
-    private val rowTimeShortFormatter = SimpleDateFormat("h:mm", Locale.getDefault())
-    private val previewFormatter = SimpleDateFormat("EEE h:mm a", Locale.getDefault())
     private val calendarBuffer = Calendar.getInstance()
 
     private val stageArtState = NowPlayingArtwork.State()
@@ -138,6 +128,9 @@ class HomeScreenBinder(private val root: View) {
     private val inflater = LayoutInflater.from(root.context)
 
     init {
+        LocaleTypography.apply(root)
+        configureClockForLocale()
+
         for (frame in arrayOf(stageArtFrame, pillArtFrame)) {
             frame.outlineProvider = object : ViewOutlineProviderRounded(8f) {}
             frame.clipToOutline = true
@@ -145,8 +138,8 @@ class HomeScreenBinder(private val root: View) {
         ambientArtFrame.outlineProvider = object : ViewOutlineProviderRounded(6f) {}
         ambientArtFrame.clipToOutline = true
 
-        // Seconds collapse: AM/PM slides into the vacated slot (see the
-        // previous layout's rationale — behavior is preserved verbatim).
+        // Seconds can collapse independently while the locale-correct day
+        // period stays in its natural position before or after the time.
         clockGroup.layoutTransition = LayoutTransition().apply {
             setDuration(LayoutTransition.DISAPPEARING, SECONDS_FADE_OUT_MS)
             setDuration(LayoutTransition.CHANGE_DISAPPEARING, SECONDS_FADE_OUT_MS)
@@ -170,33 +163,60 @@ class HomeScreenBinder(private val root: View) {
     // Clock
     // ------------------------------------------------------------------
 
+    private fun configureClockForLocale() {
+        val context = root.context
+        if (!LocalizedDateTime.usesDayPeriod(context)) {
+            textClockAmPm.visibility = View.GONE
+            return
+        }
+
+        val params = textClockAmPm.layoutParams
+        val beforeTime = LocalizedDateTime.dayPeriodBeforeTime(context)
+        clockGroup.removeView(textClockAmPm)
+        val index = if (beforeTime) 0 else clockGroup.childCount
+        clockGroup.addView(textClockAmPm, index, params)
+
+        val spacing = (8f * root.resources.displayMetrics.density).toInt()
+        (textClockAmPm.layoutParams as? ViewGroup.MarginLayoutParams)?.let { margins ->
+            margins.marginStart = if (beforeTime) 0 else spacing
+            margins.marginEnd = if (beforeTime) spacing else 0
+            textClockAmPm.layoutParams = margins
+        }
+        textClockAmPm.visibility = View.VISIBLE
+    }
+
     fun updateClock(force: Boolean = false) {
         calendarBuffer.timeInMillis = System.currentTimeMillis()
-        val now = calendarBuffer.time
-        val time = timeFormatter.format(now)
+        val nowMillis = calendarBuffer.timeInMillis
+        val context = root.context
+
+        val time = LocalizedDateTime.formatClockTime(context, nowMillis)
         if (force || time != lastTimeText) {
             textClockTime.text = time
             lastTimeText = time
         }
-        val seconds = secondsFormatter.format(now)
+        val seconds = LocalizedDateTime.formatClockSeconds(context, nowMillis)
         if (force || seconds != lastSecondsText) {
             textClockSeconds.text = seconds
             lastSecondsText = seconds
         }
-        val amPm = amPmFormatter.format(now)
+        val amPm = LocalizedDateTime.formatDayPeriod(context, nowMillis)
         if (force || amPm != lastAmPmText) {
             textClockAmPm.text = amPm
             lastAmPmText = amPm
         }
-        val date = eyebrowFormatter.format(now).uppercase(Locale.getDefault())
+        if (!minimalWallpaperMode) {
+            textClockAmPm.visibility = if (LocalizedDateTime.usesDayPeriod(context)) View.VISIBLE else View.GONE
+        }
+        val date = LocalizedDateTime.formatHomeDate(context, nowMillis)
         if (force || date != lastDateText) {
             textClockDate.text = date
             lastDateText = date
         }
 
-        // Stage countdowns ("43 MIN LEFT") and NOW transitions are minute-
-        // grained; re-render when the minute flips rather than every second.
-        val minute = calendarBuffer.timeInMillis / 60_000L
+        // Stage countdowns and NOW transitions are minute-grained; re-render
+        // when the minute flips rather than every second.
+        val minute = nowMillis / 60_000L
         if (force || minute != lastRenderedMinute) {
             lastRenderedMinute = minute
             renderHome()
@@ -343,7 +363,7 @@ class HomeScreenBinder(private val root: View) {
         val accent = ContextCompat.getColor(context, R.color.accent_spotify)
         applyStageAccent(accent)
         textStageTag.text = context.getString(R.string.stage_now_playing)
-        textStageInfo.text = info.album.ifBlank { "" }.uppercase(Locale.getDefault())
+        textStageInfo.text = LocalizedDateTime.displayCase(context, info.album.ifBlank { "" })
         textStageTitle.text = info.title
         val artist = info.artist.ifBlank { context.getString(R.string.unknown_artist) }
         textStageMeta.text = queueUpNext?.let {
@@ -386,14 +406,17 @@ class HomeScreenBinder(private val root: View) {
         val context = root.context
         val now = System.currentTimeMillis()
         val configured = when (source) {
-            CalendarSource.PERSONAL ->
-                CalendarPreferences.getPersonalUrl(context).isNotBlank() ||
-                    GoogleCalendarClient.isConfigured
-            CalendarSource.WORK -> CalendarPreferences.getWorkUrl(context).isNotBlank()
+            CalendarSource.PERSONAL -> CalendarPreferences.isPersonalConfigured(context)
+            CalendarSource.WORK -> CalendarPreferences.isWorkConfigured(context)
         }
 
         if (!CalendarPreferences.isEnabled(context) || !configured) {
-            showDeckQuiet(deck, glyph = "+", title = context.getString(R.string.deck_setup_hint), sub = null)
+            showDeckQuiet(
+                deck,
+                glyph = "+",
+                title = context.getString(R.string.calendar_add_source_in_settings),
+                sub = null
+            )
             deck.footer.text = ""
             return
         }
@@ -459,11 +482,11 @@ class HomeScreenBinder(private val root: View) {
         val next = calendarSnapshot.nextAfterToday[source]
             ?: return context.getString(R.string.deck_nothing_scheduled)
         val stamp = if (next.isAllDay) {
-            SimpleDateFormat("EEE", Locale.getDefault()).format(Date(next.startMillis))
+            LocalizedDateTime.formatWeekday(context, next.startMillis)
         } else {
-            previewFormatter.format(Date(next.startMillis))
-        }.uppercase(Locale.getDefault())
-        val title = next.title.uppercase(Locale.getDefault()).let {
+            LocalizedDateTime.formatPreviewDateTime(context, next.startMillis)
+        }
+        val title = LocalizedDateTime.displayCase(context, next.title).let {
             if (it.length > 18) it.take(17).trimEnd() + "…" else it
         }
         return context.getString(R.string.deck_next_preview, stamp, title)
@@ -478,13 +501,25 @@ class HomeScreenBinder(private val root: View) {
     ): String {
         val done = events.count { it.isPast(now) }
         val tentative = events.count { it.busyStatus == BusyStatus.TENTATIVE }
-        val noun = when (source) {
-            CalendarSource.PERSONAL -> if (events.size == 1) "EVENT" else "EVENTS"
-            CalendarSource.WORK -> if (events.size == 1) "MEETING" else "MEETINGS"
+        val countResource = when (source) {
+            CalendarSource.PERSONAL -> R.plurals.deck_event_count
+            CalendarSource.WORK -> R.plurals.deck_meeting_count
         }
-        val parts = mutableListOf("${events.size} $noun")
-        if (done > 0) parts.add("$done DONE")
-        if (source == CalendarSource.WORK && tentative > 0) parts.add("$tentative TENTATIVE")
+        val parts = mutableListOf(
+            context.resources.getQuantityString(countResource, events.size, events.size)
+        )
+        if (done > 0) {
+            parts.add(context.resources.getQuantityString(R.plurals.deck_done_count, done, done))
+        }
+        if (source == CalendarSource.WORK && tentative > 0) {
+            parts.add(
+                context.resources.getQuantityString(
+                    R.plurals.deck_tentative_count,
+                    tentative,
+                    tentative
+                )
+            )
+        }
         if (hidden > 0) parts.add(context.getString(R.string.deck_more_count, hidden))
         return parts.joinToString(" · ")
     }
@@ -492,6 +527,7 @@ class HomeScreenBinder(private val root: View) {
     private fun addDeckRow(container: LinearLayout, event: CalendarEvent, now: Long) {
         val context = root.context
         val row = inflater.inflate(R.layout.item_home_deck_row, container, false)
+        LocaleTypography.apply(row)
         val rowRoot: View = row.findViewById(R.id.rowRoot)
         val dot: View = row.findViewById(R.id.rowDot)
         val bar: View = row.findViewById(R.id.rowBar)
@@ -508,8 +544,8 @@ class HomeScreenBinder(private val root: View) {
             timeStart.text = context.getString(R.string.calendar_all_day)
             timeEnd.visibility = View.GONE
         } else {
-            timeStart.text = rowTimeFormatter.format(Date(event.startMillis))
-            timeEnd.text = "– ${rowTimeShortFormatter.format(Date(event.endMillis))}"
+            timeStart.text = CalendarDisplayHelper.formatTime(context, event.startMillis)
+            timeEnd.text = "– ${CalendarDisplayHelper.formatTime(context, event.endMillis)}"
         }
         title.text = event.title
 
@@ -742,8 +778,9 @@ class HomeScreenBinder(private val root: View) {
 
     private fun formatRange(event: CalendarEvent): String {
         if (event.isAllDay) return root.context.getString(R.string.calendar_all_day)
-        val start = rowTimeShortFormatter.format(Date(event.startMillis))
-        val end = rowTimeFormatter.format(Date(event.endMillis))
+        val context = root.context
+        val start = CalendarDisplayHelper.formatTime(context, event.startMillis)
+        val end = CalendarDisplayHelper.formatTime(context, event.endMillis)
         return "$start – $end"
     }
 
@@ -751,10 +788,15 @@ class HomeScreenBinder(private val root: View) {
         val totalMinutes = (deltaMillis / 60_000L).coerceAtLeast(1)
         val hours = totalMinutes / 60
         val minutes = totalMinutes % 60
+        val context = root.context
         return when {
-            hours <= 0 -> "$minutes MIN"
-            minutes == 0L -> "$hours H"
-            else -> "$hours H $minutes M"
+            hours <= 0 -> context.getString(R.string.countdown_minutes, minutes.toInt())
+            minutes == 0L -> context.getString(R.string.countdown_hours, hours.toInt())
+            else -> context.getString(
+                R.string.countdown_hours_minutes,
+                hours.toInt(),
+                minutes.toInt()
+            )
         }
     }
 
@@ -799,7 +841,11 @@ class HomeScreenBinder(private val root: View) {
             textClockTime.setTextSize(TypedValue.COMPLEX_UNIT_PX, defaultClockTimePx)
             textClockTime.alpha = 1f
             textClockDate.alpha = 1f
-            textClockAmPm.visibility = View.VISIBLE
+            textClockAmPm.visibility = if (LocalizedDateTime.usesDayPeriod(root.context)) {
+                View.VISIBLE
+            } else {
+                View.GONE
+            }
             widgetsRow.visibility = View.VISIBLE
             textMinimalWhisper.visibility = View.GONE
         }
@@ -851,7 +897,7 @@ class HomeScreenBinder(private val root: View) {
         val prefix = when {
             next.isAllDay -> context.getString(R.string.calendar_all_day)
             next.isHappeningNow(now) -> context.getString(R.string.calendar_happening_now)
-            else -> CalendarDisplayHelper.formatTime(next.startMillis)
+            else -> CalendarDisplayHelper.formatTime(context, next.startMillis)
         }
         textMinimalWhisper.visibility = View.VISIBLE
         textMinimalWhisper.text = "$prefix · ${next.title}"
@@ -939,7 +985,7 @@ class HomeScreenBinder(private val root: View) {
         }
         return context.getString(
             R.string.ambient_label_now_until,
-            CalendarDisplayHelper.formatTime(event.endMillis)
+            CalendarDisplayHelper.formatTime(context, event.endMillis)
         )
     }
 
@@ -949,7 +995,7 @@ class HomeScreenBinder(private val root: View) {
         }
         return context.getString(
             R.string.ambient_label_next_at,
-            CalendarDisplayHelper.formatTime(event.startMillis)
+            CalendarDisplayHelper.formatTime(context, event.startMillis)
         )
     }
 

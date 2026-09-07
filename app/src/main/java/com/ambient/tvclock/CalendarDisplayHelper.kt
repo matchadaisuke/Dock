@@ -1,31 +1,27 @@
 package com.ambient.tvclock
 
 import android.content.Context
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 object CalendarDisplayHelper {
 
-    private val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
-    private val updatedFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
+    fun formatTime(context: Context, millis: Long): String =
+        LocalizedDateTime.formatTime(context, millis)
 
-    fun formatTime(millis: Long): String = timeFormat.format(Date(millis))
-
-    fun formatEventTime(event: CalendarEvent): String {
+    fun formatEventTime(context: Context, event: CalendarEvent): String {
         if (event.isAllDay) {
-            return "All day"
+            return context.getString(R.string.calendar_all_day)
         }
-        return "${formatTime(event.startMillis)} – ${formatTime(event.endMillis)}"
+        return "${formatTime(context, event.startMillis)} – ${formatTime(context, event.endMillis)}"
     }
 
-    fun formatUpdated(millis: Long): String =
-        updatedFormat.format(Date(millis))
+    fun formatUpdated(context: Context, millis: Long): String =
+        formatTime(context, millis)
 
+    /** Source vocabulary is intentionally collapsed in the single-calendar UI. */
     fun sourceLabel(context: Context, source: CalendarSource): String =
         when (source) {
-            CalendarSource.PERSONAL -> context.getString(R.string.calendar_source_personal)
-            CalendarSource.WORK -> context.getString(R.string.calendar_source_work)
+            CalendarSource.PERSONAL,
+            CalendarSource.WORK -> context.getString(R.string.deck_personal)
         }
 
     fun nextUpcoming(events: List<CalendarEvent>, now: Long): CalendarEvent? {

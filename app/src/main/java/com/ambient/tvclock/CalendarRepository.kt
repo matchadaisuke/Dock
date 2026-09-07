@@ -8,7 +8,7 @@ object CalendarRepository {
 
     private const val TAG = "CalendarRepository"
 
-    /** How far past today to look for each deck's "next event" preview. */
+    /** How far past today to look for the home deck's "next event" preview. */
     private const val PREVIEW_LOOKAHEAD_DAYS = 7
 
     fun refresh(context: Context): CalendarSnapshot {
@@ -16,10 +16,9 @@ object CalendarRepository {
             return CalendarSnapshot(emptyList(), System.currentTimeMillis())
         }
 
-        val personalUrl = CalendarPreferences.getPersonalUrl(context)
-        val workUrl = CalendarPreferences.getWorkUrl(context)
+        val calendarUrl = CalendarPreferences.getCalendarUrl(context)
         val googleApi = GoogleCalendarClient.isConfigured
-        if (personalUrl.isBlank() && workUrl.isBlank() && !googleApi) {
+        if (!CalendarPreferences.isConfigured(context)) {
             return CalendarSnapshot(emptyList(), System.currentTimeMillis())
         }
 
@@ -35,10 +34,11 @@ object CalendarRepository {
         val previewEnd = cal.timeInMillis
 
         val merged = mutableListOf<CalendarEvent>()
-        var fetchFailed = false
+        val failedSources = mutableSetOf<CalendarSource>()
 
-        // Personal: Google Calendar API when provisioned (real colors, RSVP,
-        // attendees, server-side recurrence expansion), else the ICS feed.
+        // There is one logical calendar. Prefer the provisioned Google API when
+        // available because it carries richer metadata; the single iCal URL is
+        // its fallback. Without API credentials, that same URL is the source.
         val apiEvents = if (googleApi) {
             GoogleCalendarClient.fetchEvents(startOfDay, previewEnd)
         } else {
@@ -46,53 +46,54 @@ object CalendarRepository {
         }
         when {
             apiEvents != null -> merged.addAll(apiEvents)
-            googleApi && personalUrl.isBlank() -> fetchFailed = true
-            personalUrl.isNotBlank() ->
-                mergeFeed(personalUrl, CalendarSource.PERSONAL, merged).also { if (!it) fetchFailed = true }
+            calendarUrl.isNotBlank() -> {
+                if (!mergeFeed(calendarUrl, merged)) {
+                    failedSources.add(CalendarSource.PERSONAL)
+                }
+            }
+            googleApi -> failedSources.add(CalendarSource.PERSONAL)
         }
 
-        if (workUrl.isNotBlank()) {
-            mergeFeed(workUrl, CalendarSource.WORK, merged).also { if (!it) fetchFailed = true }
-        }
-
-        // Expand across the whole preview window in one pass; today's list
-        // and the per-source "next after today" previews both come out of it.
+        // Expand across the whole preview window in one pass; today's list and
+        // the single deck's "next after today" preview both come out of it.
         val expanded = try {
             RruleExpander.expand(merged.sortedBy { it.startMillis }, startOfDay, previewEnd)
         } catch (e: Exception) {
             Log.e(TAG, "Expand failed: ${e.message}", e)
+            if (CalendarPreferences.isConfigured(context)) {
+                failedSources.add(CalendarSource.PERSONAL)
+            }
             merged.sortedBy { it.startMillis }
         }
 
         val today = filterToday(expanded, startOfDay, endOfDay)
-        val nextAfterToday = CalendarSource.entries.mapNotNull { source ->
-            expanded
-                .filter {
-                    it.rrule == null && it.source == source &&
-                        it.startMillis >= endOfDay && it.startMillis < previewEnd
-                }
-                .minByOrNull { it.startMillis }
-                ?.let { source to it }
-        }.toMap()
+        val next = expanded
+            .filter {
+                it.rrule == null &&
+                    it.startMillis >= endOfDay && it.startMillis < previewEnd
+            }
+            .minByOrNull { it.startMillis }
+        val nextAfterToday = next?.let { mapOf(CalendarSource.PERSONAL to it) }.orEmpty()
 
-        Log.i(TAG, "Today events: ${today.size} (fetchFailed=$fetchFailed)")
+        Log.i(TAG, "Today events: ${today.size} (failedSources=$failedSources)")
 
         return CalendarSnapshot(
             events = today,
             lastUpdatedMillis = System.currentTimeMillis(),
-            errorMessage = if (fetchFailed && today.isEmpty()) "error" else null,
-            nextAfterToday = nextAfterToday
+            errorMessage = if (failedSources.isNotEmpty()) "error" else null,
+            nextAfterToday = nextAfterToday,
+            failedSources = failedSources.toSet(),
         )
     }
 
-    private fun mergeFeed(url: String, source: CalendarSource, merged: MutableList<CalendarEvent>): Boolean {
+    private fun mergeFeed(url: String, merged: MutableList<CalendarEvent>): Boolean {
         val body = IcalFetcher.fetch(url) ?: return false
         return try {
-            merged.addAll(IcalParser.parse(body, source))
+            merged.addAll(IcalParser.parse(body, CalendarSource.PERSONAL))
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Parse failed for $source: ${e.message}", e)
-            merged.isNotEmpty()
+            Log.e(TAG, "Parse failed: ${e.message}", e)
+            false
         }
     }
 

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pref_personal_calendar_url_title">Calendar URL</string>
+    <string name="pref_personal_calendar_url_summary">Private iCal or webcal subscription URL</string>
+    <string name="deck_personal">Calendar</string>
+    <string name="deck_quiet_personal_title">Nothing scheduled</string>
+    <string name="deck_quiet_personal_subtitle">Your day is clear</string>
+    <string name="calendar_partial_fetch_error">Calendar could not be updated</string>
+</resources>

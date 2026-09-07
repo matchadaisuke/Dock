@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="calendar_add_source_in_settings">設定でカレンダーを追加してください</string>
+    <string name="calendar_partial_fetch_error">一部のカレンダーを更新できませんでした</string>
+
+    <plurals name="deck_event_count">
+        <item quantity="other">予定 %1$d件</item>
+    </plurals>
+    <plurals name="deck_meeting_count">
+        <item quantity="other">会議 %1$d件</item>
+    </plurals>
+    <plurals name="deck_done_count">
+        <item quantity="other">完了 %1$d件</item>
+    </plurals>
+    <plurals name="deck_tentative_count">
+        <item quantity="other">仮承諾 %1$d件</item>
+    </plurals>
+
+    <string name="countdown_minutes">%1$d分</string>
+    <string name="countdown_hours">%1$d時間</string>
+    <string name="countdown_hours_minutes">%1$d時間%2$d分</string>
+</resources>
