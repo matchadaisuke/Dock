@@ -11,8 +11,8 @@ object CalendarRefresh {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     // One persistent daemon thread services every refresh — receiver pings,
-    // poller ticks, and the settings "refresh now" button all coalesce here
-    // instead of allocating a fresh OS thread per call.
+    // poller ticks, and settings refreshes all coalesce here instead of
+    // allocating a fresh OS thread per call.
     private val executor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "calendar-fetch").apply { isDaemon = true }
     }
@@ -25,10 +25,6 @@ object CalendarRefresh {
             } catch (e: Exception) {
                 Log.e(TAG, "Refresh crashed: ${e.message}", e)
                 val previous = CalendarCenter.current
-                val failedSources = buildSet {
-                    if (CalendarPreferences.isPersonalConfigured(app)) add(CalendarSource.PERSONAL)
-                    if (CalendarPreferences.isWorkConfigured(app)) add(CalendarSource.WORK)
-                }
                 CalendarSnapshot(
                     // Keep the last known-good payload visible, but do not lie
                     // that this failed refresh produced fresh data.
@@ -36,7 +32,11 @@ object CalendarRefresh {
                     lastUpdatedMillis = previous.lastUpdatedMillis,
                     errorMessage = "error",
                     nextAfterToday = previous.nextAfterToday,
-                    failedSources = failedSources,
+                    failedSources = if (CalendarPreferences.isConfigured(app)) {
+                        setOf(CalendarSource.PERSONAL)
+                    } else {
+                        emptySet()
+                    },
                 )
             }
             mainHandler.post { CalendarCenter.update(snapshot) }
