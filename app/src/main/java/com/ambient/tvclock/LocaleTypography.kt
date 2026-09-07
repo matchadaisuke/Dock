@@ -1,6 +1,7 @@
 package com.ambient.tvclock
 
 import android.graphics.Typeface
+import android.os.Build
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
@@ -61,8 +62,7 @@ object LocaleTypography {
     private fun applyForText(textView: TextView, text: CharSequence?) {
         val original = originals[textView] ?: return
         if (containsCjk(text)) {
-            val style = original.typeface.style
-            textView.typeface = Typeface.create("sans-serif", style)
+            textView.typeface = matchingSystemTypeface(original.typeface)
             // Wide tracking designed for Latin eyebrow text looks broken in Japanese.
             if (original.letterSpacing > CJK_MAX_LETTER_SPACING) {
                 textView.letterSpacing = CJK_MAX_LETTER_SPACING
@@ -70,6 +70,23 @@ object LocaleTypography {
         } else {
             textView.typeface = original.typeface
             textView.letterSpacing = original.letterSpacing
+        }
+    }
+
+    /**
+     * Keep the Japanese fallback at roughly the same visual weight as the
+     * bundled Latin font. On API 28+ Android exposes the font's numeric weight,
+     * which preserves Manrope Medium / JetBrains Mono Bold much better than
+     * reducing everything to NORMAL vs BOLD.
+     */
+    private fun matchingSystemTypeface(original: Typeface): Typeface {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val base = Typeface.create("sans-serif", Typeface.NORMAL)
+            Typeface.create(base, original.weight.coerceIn(100, 900), original.isItalic)
+        } else {
+            val family = if (original.isBold) "sans-serif-medium" else "sans-serif"
+            val style = if (original.isItalic) Typeface.ITALIC else Typeface.NORMAL
+            Typeface.create(family, style)
         }
     }
 
