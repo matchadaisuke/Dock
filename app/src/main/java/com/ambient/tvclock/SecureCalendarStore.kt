@@ -8,12 +8,12 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
 /**
- * Stores bearer-like calendar feed URLs encrypted at rest using Android Keystore.
+ * Stores the bearer-like calendar feed URL encrypted at rest using Android Keystore.
  *
- * The previous implementation kept secret iCal URLs in the default preferences
- * file as plaintext. Those URLs grant read access to a calendar feed, so treat
- * them like credentials. Existing values are migrated once and removed from the
- * legacy preference file.
+ * Older builds exposed separate Personal and Work feeds. The app now has one
+ * calendar slot. Migration prefers the former Personal URL; when it is empty,
+ * the former Work URL is promoted into the single slot. The obsolete Work copy
+ * is then deleted from both encrypted and legacy plaintext preferences.
  */
 object SecureCalendarStore {
     private const val PREFS = "secure_calendar_preferences"
@@ -32,47 +32,66 @@ object SecureCalendarStore {
     }
 
     fun migrateLegacy(context: Context) {
-        val legacy = PreferenceManager.getDefaultSharedPreferences(context.applicationContext)
-        val secure = prefs(context)
-        val keys = listOf(
-            CalendarPreferences.KEY_PERSONAL_URL,
-            CalendarPreferences.KEY_WORK_URL,
-        )
+        val app = context.applicationContext
+        val legacy = PreferenceManager.getDefaultSharedPreferences(app)
+        val secure = prefs(app)
 
-        val secureEditor = secure.edit()
-        val legacyEditor = legacy.edit()
-        var changed = false
-        for (key in keys) {
-            val oldValue = legacy.getString(key, null)?.trim().orEmpty()
-            if (oldValue.isNotEmpty() && secure.getString(key, null).isNullOrBlank()) {
-                secureEditor.putString(key, oldValue)
-                changed = true
-            }
-            if (legacy.contains(key)) {
-                legacyEditor.remove(key)
-                changed = true
+        val secureCalendar = secure.getString(CalendarPreferences.KEY_CALENDAR_URL, null)
+            ?.trim().orEmpty()
+        val secureWork = secure.getString(CalendarPreferences.KEY_WORK_URL, null)
+            ?.trim().orEmpty()
+        val legacyCalendar = legacy.getString(CalendarPreferences.KEY_CALENDAR_URL, null)
+            ?.trim().orEmpty()
+        val legacyWork = legacy.getString(CalendarPreferences.KEY_WORK_URL, null)
+            ?.trim().orEmpty()
+
+        // Preserve the old Personal value first. A Work-only installation still
+        // keeps its calendar by promoting that URL into the new single slot.
+        val chosen = secureCalendar.ifBlank {
+            legacyCalendar.ifBlank {
+                secureWork.ifBlank { legacyWork }
             }
         }
-        if (changed) {
-            // Commit the encrypted copy before deleting the plaintext source.
-            if (secureEditor.commit()) {
-                legacyEditor.apply()
-            }
+
+        val secureEditor = secure.edit()
+        var secureChanged = false
+        if (chosen.isNotBlank() && secureCalendar != chosen) {
+            secureEditor.putString(CalendarPreferences.KEY_CALENDAR_URL, chosen)
+            secureChanged = true
+        }
+        if (secure.contains(CalendarPreferences.KEY_WORK_URL)) {
+            secureEditor.remove(CalendarPreferences.KEY_WORK_URL)
+            secureChanged = true
+        }
+
+        val secureReady = !secureChanged || secureEditor.commit()
+        if (!secureReady) return
+
+        if (legacy.contains(CalendarPreferences.KEY_CALENDAR_URL) ||
+            legacy.contains(CalendarPreferences.KEY_WORK_URL)
+        ) {
+            legacy.edit()
+                .remove(CalendarPreferences.KEY_CALENDAR_URL)
+                .remove(CalendarPreferences.KEY_WORK_URL)
+                .apply()
         }
     }
 
     fun get(context: Context, key: String): String {
+        require(key == CalendarPreferences.KEY_CALENDAR_URL)
         migrateLegacy(context)
         return prefs(context).getString(key, "")?.trim().orEmpty()
     }
 
     fun put(context: Context, key: String, value: String?) {
-        require(key == CalendarPreferences.KEY_PERSONAL_URL || key == CalendarPreferences.KEY_WORK_URL)
+        require(key == CalendarPreferences.KEY_CALENDAR_URL)
+        migrateLegacy(context)
         val normalized = value?.trim().orEmpty()
         prefs(context).edit().putString(key, normalized).apply()
         PreferenceManager.getDefaultSharedPreferences(context.applicationContext)
             .edit()
-            .remove(key)
+            .remove(CalendarPreferences.KEY_CALENDAR_URL)
+            .remove(CalendarPreferences.KEY_WORK_URL)
             .apply()
     }
 }
@@ -87,11 +106,20 @@ class CalendarPreferenceDataStore(context: Context) : PreferenceDataStore() {
 
     override fun putString(key: String?, value: String?) {
         if (key == null) return
-        SecureCalendarStore.put(appContext, key, value)
+        val canonical = when (key) {
+            CalendarPreferences.KEY_CALENDAR_URL,
+            CalendarPreferences.KEY_WORK_URL -> CalendarPreferences.KEY_CALENDAR_URL
+            else -> return
+        }
+        SecureCalendarStore.put(appContext, canonical, value)
     }
 
     override fun getString(key: String?, defValue: String?): String? {
         if (key == null) return defValue
-        return SecureCalendarStore.get(appContext, key).ifEmpty { defValue }
+        if (key != CalendarPreferences.KEY_CALENDAR_URL && key != CalendarPreferences.KEY_WORK_URL) {
+            return defValue
+        }
+        return SecureCalendarStore.get(appContext, CalendarPreferences.KEY_CALENDAR_URL)
+            .ifEmpty { defValue }
     }
 }
