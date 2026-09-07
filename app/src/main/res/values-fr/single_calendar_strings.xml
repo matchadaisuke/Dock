@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pref_calendar_url_title">URL du calendrier</string>
+    <string name="pref_calendar_url_summary">URL d’abonnement iCal ou webcal privée</string>
+    <string name="deck_calendar">Calendrier</string>
+    <string name="deck_quiet_calendar_title">Rien de prévu</string>
+    <string name="deck_quiet_calendar_subtitle">Aucun événement aujourd’hui</string>
+</resources>
