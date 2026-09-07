@@ -45,14 +45,6 @@ class SpotifyAuthActivity : Activity() {
                 val url = request?.url?.toString() ?: return false
                 return handleRedirect(url)
             }
-
-            @Deprecated("Deprecated in Java")
-            override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
-                if (url != null && handleRedirect(url)) {
-                    return true
-                }
-                return super.shouldOverrideUrlLoading(view, url)
-            }
         }
         webView.loadUrl(SpotifyApiClient.buildAuthorizeUrl(verifier))
     }
