@@ -29,6 +29,7 @@ class DashboardPagerAdapter(
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PageHolder {
         val page = DashboardPage.entries[viewType]
         val view = LayoutInflater.from(parent.context).inflate(page.layoutRes, parent, false)
+        LocaleTypography.apply(view)
         return PageHolder(view)
     }
 
