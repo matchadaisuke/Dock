@@ -24,10 +24,19 @@ object CalendarRefresh {
                 CalendarRepository.refresh(app)
             } catch (e: Exception) {
                 Log.e(TAG, "Refresh crashed: ${e.message}", e)
+                val previous = CalendarCenter.current
+                val failedSources = buildSet {
+                    if (CalendarPreferences.isPersonalConfigured(app)) add(CalendarSource.PERSONAL)
+                    if (CalendarPreferences.isWorkConfigured(app)) add(CalendarSource.WORK)
+                }
                 CalendarSnapshot(
-                    events = CalendarCenter.current.events,
-                    lastUpdatedMillis = System.currentTimeMillis(),
-                    errorMessage = if (CalendarCenter.current.events.isEmpty()) "error" else null
+                    // Keep the last known-good payload visible, but do not lie
+                    // that this failed refresh produced fresh data.
+                    events = previous.events,
+                    lastUpdatedMillis = previous.lastUpdatedMillis,
+                    errorMessage = "error",
+                    nextAfterToday = previous.nextAfterToday,
+                    failedSources = failedSources,
                 )
             }
             mainHandler.post { CalendarCenter.update(snapshot) }
