@@ -49,19 +49,7 @@ class CalendarEventAdapter(
         }
 
         holder.textTitle.text = event.title
-        holder.textSource.text = CalendarDisplayHelper.sourceLabel(context, event.source)
-        holder.textSource.setBackgroundResource(
-            when (event.source) {
-                CalendarSource.PERSONAL -> R.drawable.bg_chip_personal
-                CalendarSource.WORK -> R.drawable.bg_chip_work
-            }
-        )
-        holder.sourceRail.setBackgroundResource(
-            when (event.source) {
-                CalendarSource.PERSONAL -> R.drawable.bg_rail_personal
-                CalendarSource.WORK -> R.drawable.bg_rail_work
-            }
-        )
+        holder.textSource.visibility = View.GONE
 
         if (event.location.isNotEmpty()) {
             holder.textLocation.visibility = View.VISIBLE
@@ -70,13 +58,8 @@ class CalendarEventAdapter(
             holder.textLocation.visibility = View.GONE
         }
 
-        if (happening) {
-            holder.nowBadge.visibility = View.VISIBLE
-            holder.row.setBackgroundResource(R.drawable.bg_event_row_now)
-        } else {
-            holder.nowBadge.visibility = View.GONE
-            holder.row.setBackgroundResource(android.R.color.transparent)
-        }
+        holder.nowBadge.visibility = View.GONE
+        holder.row.setBackgroundResource(android.R.color.transparent)
 
         holder.textTitle.setTypeface(null, if (happening) Typeface.BOLD else Typeface.NORMAL)
 
@@ -84,7 +67,7 @@ class CalendarEventAdapter(
         holder.textTitle.alpha = titleAlpha
         holder.textTimeStart.alpha = if (past) 0.45f else 0.9f
         holder.textTimeEnd.alpha = if (past) 0.45f else 0.65f
-        holder.textSource.alpha = if (past) 0.55f else 1f
+        holder.sourceRail.alpha = if (happening) 1f else if (past) 0.25f else 0.55f
 
         val strike = past
         holder.textTimeStart.paintFlags =

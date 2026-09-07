@@ -1,272 +1,88 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/rootContainer"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/bg_screen_ambient"
-    android:clipChildren="false"
-    android:clipToPadding="false"
-    android:keepScreenOn="true">
+    android:background="#0B0C0F"
+    android:keepScreenOn="true"
+    android:orientation="vertical"
+    android:paddingStart="56dp"
+    android:paddingTop="40dp"
+    android:paddingEnd="56dp"
+    android:paddingBottom="34dp">
 
-    <!-- Full-bleed background image. Sits behind the safe-area padded content so
-         it reaches every edge of the TV. Source is decided by BackgroundController:
-         blurred album art, an Unsplash landscape photo, or transparent (black).
-         Alpha stays low enough that foreground text remains comfortably readable. -->
-    <ImageView
-        android:id="@+id/imageHomeBackground"
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:alpha="0"
-        android:contentDescription="@null"
-        android:scaleType="centerCrop" />
+        android:layout_height="wrap_content"
+        android:gravity="bottom"
+        android:orientation="horizontal">
 
-    <!-- Unsplash attribution caption. Shown bottom-left whenever an Unsplash
-         photo is the active background; hidden otherwise. Required by the
-         Unsplash API ToS — kept small + low-opacity so it doesn't crowd the UI. -->
+        <TextView
+            android:id="@+id/textMainClock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/manrope_extralight"
+            android:includeFontPadding="false"
+            android:letterSpacing="-0.03"
+            android:textColor="#F5F7FA"
+            android:textSize="88sp" />
+
+        <TextView
+            android:id="@+id/textMainSeconds"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:layout_marginBottom="10dp"
+            android:fontFamily="@font/jetbrains_mono"
+            android:includeFontPadding="false"
+            android:textColor="#89909A"
+            android:textSize="23sp" />
+    </LinearLayout>
+
     <TextView
-        android:id="@+id/textHomeBackgroundCredit"
+        android:id="@+id/textCalendarScreenDate"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom|start"
-        android:layout_marginStart="20dp"
-        android:layout_marginBottom="56dp"
-        android:alpha="0"
-        android:fontFamily="sans-serif-light"
-        android:maxWidth="480dp"
-        android:maxLines="1"
-        android:ellipsize="end"
-        android:shadowColor="#CC000000"
-        android:shadowDx="0"
-        android:shadowDy="1"
-        android:shadowRadius="3"
-        android:textColor="@color/text_secondary"
-        android:textSize="11sp"
-        android:visibility="gone" />
+        android:layout_marginTop="2dp"
+        android:fontFamily="@font/manrope_medium"
+        android:includeFontPadding="false"
+        android:textColor="#A7ADB6"
+        android:textSize="17sp" />
 
-    <!-- Home Lab web dashboard. Lives outside the safe-area padded pager so it
-         renders full-bleed; the pager's HOMELAB page is an empty placeholder
-         and MainActivity crossfades this layer when that page is selected.
-         Sits below the RelativeLayout so the page indicator stays on top. -->
-    <FrameLayout
-        android:id="@+id/homeLabOverlay"
+    <View
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:alpha="0"
-        android:visibility="gone" />
+        android:layout_height="1dp"
+        android:layout_marginTop="24dp"
+        android:layout_marginBottom="8dp"
+        android:background="#24272D" />
 
-    <RelativeLayout
+    <TextView
+        android:id="@+id/textCalendarScreenTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFamily="@font/manrope_semibold"
+        android:includeFontPadding="false"
+        android:text="@string/calendar_screen_title"
+        android:textColor="#E7E9EC"
+        android:textSize="15sp" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recyclerCalendarEvents"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:clipChildren="false"
+        android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        android:layout_weight="1"
         android:clipToPadding="false"
-        android:paddingStart="@dimen/tv_safe_horizontal"
-        android:paddingTop="@dimen/tv_safe_top"
-        android:paddingEnd="@dimen/tv_safe_horizontal"
-        android:paddingBottom="@dimen/tv_safe_bottom">
+        android:paddingBottom="10dp"
+        android:scrollbars="none" />
 
-        <FrameLayout
-            android:id="@+id/contentDisplayGroup"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:layout_above="@+id/onboardingPill"
-            android:clipChildren="false"
-            android:clipToPadding="false">
-
-            <androidx.viewpager2.widget.ViewPager2
-                android:id="@+id/dashboardPager"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:layout_gravity="center" />
-        </FrameLayout>
-
-        <!-- First-launch onboarding pill (Decision #5). Hidden by default; MainActivity
-             flips visibility when the receiver master toggle is off and the user is on
-             the Home page within the 7-day onboarding window. -->
-        <LinearLayout
-            android:id="@+id/onboardingPill"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_above="@+id/pageIndicatorGroup"
-            android:layout_centerHorizontal="true"
-            android:layout_marginBottom="8dp"
-            android:background="@drawable/bg_onboarding_pill"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingStart="14dp"
-            android:paddingTop="6dp"
-            android:paddingEnd="6dp"
-            android:paddingBottom="6dp"
-            android:visibility="gone">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="sans-serif-light"
-                android:text="@string/onboarding_mirroring_pill"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp" />
-
-            <TextView
-                android:id="@+id/onboardingDismiss"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:contentDescription="@string/onboarding_dismiss"
-                android:fontFamily="sans-serif-medium"
-                android:focusable="true"
-                android:paddingStart="6dp"
-                android:paddingTop="2dp"
-                android:paddingEnd="6dp"
-                android:paddingBottom="2dp"
-                android:text="×"
-                android:textColor="@color/text_tertiary"
-                android:textSize="14sp" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/pageIndicatorGroup"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_alignParentBottom="true"
-            android:layout_centerHorizontal="true"
-            android:gravity="center"
-            android:orientation="horizontal"
-            android:paddingTop="8dp"
-            android:paddingBottom="4dp">
-
-            <TextView
-                android:id="@+id/textPageStatus"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="sans-serif-light"
-                android:paddingStart="12dp"
-                android:paddingTop="4dp"
-                android:paddingEnd="12dp"
-                android:paddingBottom="4dp"
-                android:text="@string/page_status"
-                android:textColor="@color/text_tertiary"
-                android:textSize="13sp" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="·"
-                android:textColor="@color/text_tertiary"
-                android:textSize="13sp" />
-
-            <TextView
-                android:id="@+id/textPageHome"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="sans-serif-medium"
-                android:paddingStart="12dp"
-                android:paddingTop="4dp"
-                android:paddingEnd="12dp"
-                android:paddingBottom="4dp"
-                android:text="@string/page_home"
-                android:textColor="@color/text_primary"
-                android:textSize="13sp" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="·"
-                android:textColor="@color/text_tertiary"
-                android:textSize="13sp" />
-
-            <TextView
-                android:id="@+id/textPageCalendar"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="sans-serif-light"
-                android:paddingStart="12dp"
-                android:paddingTop="4dp"
-                android:paddingEnd="12dp"
-                android:paddingBottom="4dp"
-                android:text="@string/page_calendar"
-                android:textColor="@color/text_tertiary"
-                android:textSize="13sp" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="·"
-                android:textColor="@color/text_tertiary"
-                android:textSize="13sp" />
-
-            <TextView
-                android:id="@+id/textPageMusic"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="sans-serif-light"
-                android:paddingStart="12dp"
-                android:paddingTop="4dp"
-                android:paddingEnd="12dp"
-                android:paddingBottom="4dp"
-                android:text="@string/page_music"
-                android:textColor="@color/text_tertiary"
-                android:textSize="13sp" />
-
-            <!-- Ad Block is a settings-dependent section; MainActivity toggles
-                 the separator + label visibility with the page set. -->
-            <TextView
-                android:id="@+id/dotPageAdblock"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="·"
-                android:textColor="@color/text_tertiary"
-                android:textSize="13sp"
-                android:visibility="gone" />
-
-            <TextView
-                android:id="@+id/textPageAdblock"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="sans-serif-light"
-                android:paddingStart="12dp"
-                android:paddingTop="4dp"
-                android:paddingEnd="12dp"
-                android:paddingBottom="4dp"
-                android:text="@string/page_adblock"
-                android:textColor="@color/text_tertiary"
-                android:textSize="13sp"
-                android:visibility="gone" />
-
-            <!-- Home Lab is a settings-dependent section; MainActivity toggles
-                 the separator + label visibility with the page set. -->
-            <TextView
-                android:id="@+id/dotPageHomeLab"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="·"
-                android:textColor="@color/text_tertiary"
-                android:textSize="13sp"
-                android:visibility="gone" />
-
-            <TextView
-                android:id="@+id/textPageHomeLab"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="sans-serif-light"
-                android:paddingStart="12dp"
-                android:paddingTop="4dp"
-                android:paddingEnd="12dp"
-                android:paddingBottom="4dp"
-                android:text="@string/page_homelab"
-                android:textColor="@color/text_tertiary"
-                android:textSize="13sp"
-                android:visibility="gone" />
-        </LinearLayout>
-    </RelativeLayout>
-
-    <!-- Phase 3: mirroring overlay. Hidden until a sender connects. Sits above
-         the dashboard so the SurfaceView covers the full screen edge-to-edge. -->
-    <com.ambient.tvclock.receiver.ui.StreamingOverlay
-        android:id="@+id/streamingOverlay"
+    <TextView
+        android:id="@+id/textCalendarFooter"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:alpha="0"
-        android:background="@android:color/black"
-        android:visibility="gone" />
-</FrameLayout>
+        android:layout_height="wrap_content"
+        android:fontFamily="@font/manrope_medium"
+        android:gravity="start"
+        android:includeFontPadding="false"
+        android:paddingTop="8dp"
+        android:textColor="#666D77"
+        android:textSize="11sp" />
+</LinearLayout>

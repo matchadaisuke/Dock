@@ -47,7 +47,7 @@ object CalendarRepository {
         when {
             apiEvents != null -> merged.addAll(apiEvents)
             calendarUrl.isNotBlank() -> {
-                if (!mergeFeed(calendarUrl, merged)) {
+                if (!mergeFeed(calendarUrl, merged, startOfDay, previewEnd)) {
                     failedSources.add(CalendarSource.PERSONAL)
                 }
             }
@@ -86,10 +86,22 @@ object CalendarRepository {
         )
     }
 
-    private fun mergeFeed(url: String, merged: MutableList<CalendarEvent>): Boolean {
+    private fun mergeFeed(
+        url: String,
+        merged: MutableList<CalendarEvent>,
+        windowStartMillis: Long,
+        windowEndMillis: Long,
+    ): Boolean {
         val body = IcalFetcher.fetch(url) ?: return false
         return try {
-            merged.addAll(IcalParser.parse(body, CalendarSource.PERSONAL))
+            merged.addAll(
+                IcalParser.parse(
+                    body,
+                    CalendarSource.PERSONAL,
+                    windowStartMillis,
+                    windowEndMillis,
+                )
+            )
             true
         } catch (e: Exception) {
             Log.e(TAG, "Parse failed: ${e.message}", e)

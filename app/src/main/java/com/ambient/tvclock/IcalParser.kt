@@ -2,18 +2,36 @@ package com.ambient.tvclock
 
 object IcalParser {
 
-    fun parse(icsBody: String, source: CalendarSource): List<CalendarEvent> {
-        val unfolded = unfold(icsBody)
-        val vtimezones = parseVTimeZones(unfolded)
+    fun parse(
+        icsBody: String,
+        source: CalendarSource,
+        windowStartMillis: Long = Long.MIN_VALUE,
+        windowEndMillis: Long = Long.MAX_VALUE,
+    ): List<CalendarEvent> {
+        val vtimezones = parseVTimeZones(icsBody)
         val events = mutableListOf<CalendarEvent>()
-        val blocks = unfolded.split("BEGIN:VEVENT")
-        for (block in blocks.drop(1)) {
-            val end = block.indexOf("END:VEVENT")
-            val body = if (end >= 0) block.substring(0, end) else block
-            try {
-                parseEvent(body, source, vtimezones)?.let { events.add(it) }
-            } catch (_: Exception) {
-                // Skip malformed events; keep the rest of the feed.
+        var eventBody: StringBuilder? = null
+        forEachUnfoldedLine(icsBody) { line ->
+            when {
+                line == "BEGIN:VEVENT" -> eventBody = StringBuilder(512)
+                line == "END:VEVENT" -> {
+                    val body = eventBody
+                    eventBody = null
+                    if (body != null) {
+                        try {
+                            parseEvent(body.toString(), source, vtimezones)?.let { event ->
+                                if (event.rrule != null ||
+                                    (event.startMillis < windowEndMillis && event.endMillis > windowStartMillis)
+                                ) {
+                                    events.add(event)
+                                }
+                            }
+                        } catch (_: Exception) {
+                            // Skip malformed events; keep the rest of the feed.
+                        }
+                    }
+                }
+                eventBody != null -> eventBody?.append(line)?.append('\n')
             }
         }
         return events.sortedBy { it.startMillis }
@@ -23,23 +41,50 @@ object IcalParser {
      * Maps each VTIMEZONE's TZID to a GMT-offset zone ID, so TZIDs that Java doesn't
      * recognize (e.g. Outlook's "Customized Time Zone") still resolve to a usable zone.
      */
-    private fun parseVTimeZones(unfolded: String): Map<String, String> {
+    private fun parseVTimeZones(icsBody: String): Map<String, String> {
         val map = mutableMapOf<String, String>()
-        for (block in unfolded.split("BEGIN:VTIMEZONE").drop(1)) {
-            val end = block.indexOf("END:VTIMEZONE")
-            val body = if (end >= 0) block.substring(0, end) else block
-            val tzid = lineValue(body, "TZID:") ?: continue
-            // Prefer the STANDARD offset; being an hour off during DST beats being off
-            // by the zone's whole UTC offset.
-            val standard = body.substringAfter("BEGIN:STANDARD", body)
-            val offset = lineValue(standard, "TZOFFSETTO:") ?: lineValue(body, "TZOFFSETTO:") ?: continue
-            IcalTimeZones.offsetToZoneId(offset)?.let { map[tzid] = it }
+        var inTimeZone = false
+        var inStandard = false
+        var tzid: String? = null
+        var firstOffset: String? = null
+        var standardOffset: String? = null
+
+        forEachUnfoldedLine(icsBody) { line ->
+            when (line) {
+                "BEGIN:VTIMEZONE" -> {
+                    inTimeZone = true
+                    inStandard = false
+                    tzid = null
+                    firstOffset = null
+                    standardOffset = null
+                }
+                "BEGIN:STANDARD" -> if (inTimeZone) inStandard = true
+                "END:STANDARD" -> inStandard = false
+                "END:VTIMEZONE" -> {
+                    if (inTimeZone && tzid != null) {
+                        val offset = standardOffset ?: firstOffset
+                        if (offset != null) {
+                            IcalTimeZones.offsetToZoneId(offset)?.let { map[tzid!!] = it }
+                        }
+                    }
+                    inTimeZone = false
+                    inStandard = false
+                }
+                else -> if (inTimeZone) {
+                    when {
+                        line.startsWith("TZID:") && tzid == null ->
+                            tzid = line.substring("TZID:".length).trim()
+                        line.startsWith("TZOFFSETTO:") -> {
+                            val offset = line.substring("TZOFFSETTO:".length).trim()
+                            if (firstOffset == null) firstOffset = offset
+                            if (inStandard && standardOffset == null) standardOffset = offset
+                        }
+                    }
+                }
+            }
         }
         return map
     }
-
-    private fun lineValue(body: String, prefix: String): String? =
-        body.lineSequence().firstOrNull { it.startsWith(prefix) }?.substring(prefix.length)?.trim()
 
     private fun parseEvent(
         body: String,
@@ -190,19 +235,34 @@ object IcalParser {
         return map
     }
 
-    private fun unfold(ics: String): String {
-        val lines = ics.replace("\r\n", "\n").replace('\r', '\n').lines()
-        val out = StringBuilder()
-        for (line in lines) {
-            if (line.startsWith(" ") || line.startsWith("\t")) {
-                out.append(line.trimStart())
+    /**
+     * Iterates RFC 5545 logical lines without normalizing or copying the whole feed.
+     * Folded continuation lines are joined into one small per-line buffer.
+     */
+    private inline fun forEachUnfoldedLine(ics: String, consume: (String) -> Unit) {
+        var cursor = 0
+        var logical: StringBuilder? = null
+
+        while (cursor <= ics.length) {
+            var end = cursor
+            while (end < ics.length && ics[end] != '\r' && ics[end] != '\n') end++
+
+            val continuation = cursor < end && (ics[cursor] == ' ' || ics[cursor] == '\t')
+            val contentStart = if (continuation) cursor + 1 else cursor
+
+            if (continuation && logical != null) {
+                logical.append(ics, contentStart, end)
             } else {
-                if (out.isNotEmpty()) {
-                    out.append('\n')
-                }
-                out.append(line)
+                logical?.let { consume(it.toString()) }
+                logical = StringBuilder((end - contentStart).coerceAtLeast(16))
+                    .append(ics, contentStart, end)
             }
+
+            if (end >= ics.length) break
+            cursor = end + 1
+            if (ics[end] == '\r' && cursor < ics.length && ics[cursor] == '\n') cursor++
         }
-        return out.toString()
+
+        logical?.let { consume(it.toString()) }
     }
 }
