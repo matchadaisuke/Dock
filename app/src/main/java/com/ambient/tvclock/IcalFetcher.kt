@@ -8,7 +8,12 @@ object IcalFetcher {
 
     private const val TAG = "IcalFetcher"
     private const val MAX_REDIRECTS = 3
-    private const val MAX_CALENDAR_BYTES = 1024L * 1024L
+
+    // Published Google/Outlook feeds include history and recurrence metadata,
+    // so mature calendars can legitimately exceed 1 MiB. Keep a hard bound to
+    // protect a TV process from unbounded responses, but make it large enough
+    // for real-world private iCal feeds.
+    private const val MAX_CALENDAR_BYTES = 8L * 1024L * 1024L
 
     // Calendar URLs are bearer-like secrets. Handle redirects ourselves so an
     // HTTPS feed can never be silently downgraded to cleartext HTTP.
