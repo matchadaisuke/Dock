@@ -17,10 +17,11 @@ object CalendarDisplayHelper {
     fun formatUpdated(context: Context, millis: Long): String =
         formatTime(context, millis)
 
+    /** Source vocabulary is intentionally collapsed in the single-calendar UI. */
     fun sourceLabel(context: Context, source: CalendarSource): String =
         when (source) {
-            CalendarSource.PERSONAL -> context.getString(R.string.calendar_source_personal)
-            CalendarSource.WORK -> context.getString(R.string.calendar_source_work)
+            CalendarSource.PERSONAL,
+            CalendarSource.WORK -> context.getString(R.string.deck_personal)
         }
 
     fun nextUpcoming(events: List<CalendarEvent>, now: Long): CalendarEvent? {
