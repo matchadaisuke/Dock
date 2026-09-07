@@ -4,6 +4,7 @@ import android.view.View
 import android.widget.TextView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import java.util.Calendar
 
 class CalendarScreenBinder(private val root: View) {
 
@@ -18,6 +19,7 @@ class CalendarScreenBinder(private val root: View) {
     // manual scrolling when polling refreshes the list mid-read.
     private var pendingScrollToCurrent: Boolean = true
     private var latestEvents: List<CalendarEvent> = emptyList()
+    private var displayedDayOffset: Int = 0
 
     init {
         recycler.layoutManager = LinearLayoutManager(root.context)
@@ -35,7 +37,16 @@ class CalendarScreenBinder(private val root: View) {
         recycler.canScrollVertically(1) || recycler.canScrollVertically(-1)
 
     fun updateDateLine() {
-        textDate.text = LocalizedDateTime.formatCalendarDate(root.context, System.currentTimeMillis())
+        val calendar = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, displayedDayOffset)
+        }
+        textDate.text = LocalizedDateTime.formatCalendarDate(root.context, calendar.timeInMillis)
+    }
+
+    fun setDisplayedDayOffset(dayOffset: Int) {
+        displayedDayOffset = dayOffset
+        pendingScrollToCurrent = true
+        updateDateLine()
     }
 
     /**

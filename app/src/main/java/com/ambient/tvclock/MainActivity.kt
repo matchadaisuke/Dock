@@ -16,9 +16,13 @@ class MainActivity : Activity() {
     private lateinit var calendarBinder: CalendarScreenBinder
     private lateinit var calendarPoller: CalendarPoller
     private val handler = Handler(Looper.getMainLooper())
+    private var calendarDayOffset = 0
+    private var calendarNavigationRequest = 0
 
     private val calendarListener: (CalendarSnapshot) -> Unit = { snapshot ->
-        handler.post { calendarBinder.bind(snapshot) }
+        handler.post {
+            if (calendarDayOffset == 0) calendarBinder.bind(snapshot)
+        }
     }
 
     private val clockTick = object : Runnable {
@@ -71,6 +75,14 @@ class MainActivity : Activity() {
                 calendarBinder.scrollBy(scrollStep())
                 true
             }
+            KeyEvent.KEYCODE_DPAD_LEFT -> {
+                showCalendarDay(calendarDayOffset - 1)
+                true
+            }
+            KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                showCalendarDay(calendarDayOffset + 1)
+                true
+            }
             KeyEvent.KEYCODE_MENU -> {
                 startActivity(Intent(this, SettingsActivity::class.java))
                 true
@@ -84,6 +96,21 @@ class MainActivity : Activity() {
         textClock.text = LocalizedDateTime.formatClockTime(this, now)
         textSeconds.text = LocalizedDateTime.formatClockSeconds(this, now)
         calendarBinder.updateDateLine()
+    }
+
+    private fun showCalendarDay(dayOffset: Int) {
+        calendarDayOffset = dayOffset
+        calendarBinder.setDisplayedDayOffset(dayOffset)
+        val request = ++calendarNavigationRequest
+
+        Thread {
+            val snapshot = CalendarRepository.refresh(applicationContext, dayOffset)
+            handler.post {
+                if (request == calendarNavigationRequest && calendarDayOffset == dayOffset) {
+                    calendarBinder.bind(snapshot)
+                }
+            }
+        }.start()
     }
 
     private fun scrollStep(): Int =

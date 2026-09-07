@@ -11,7 +11,7 @@ object CalendarRepository {
     /** How far past today to look for the home deck's "next event" preview. */
     private const val PREVIEW_LOOKAHEAD_DAYS = 7
 
-    fun refresh(context: Context): CalendarSnapshot {
+    fun refresh(context: Context, dayOffset: Int = 0): CalendarSnapshot {
         if (!CalendarPreferences.isEnabled(context)) {
             return CalendarSnapshot(emptyList(), System.currentTimeMillis())
         }
@@ -23,6 +23,7 @@ object CalendarRepository {
         }
 
         val cal = Calendar.getInstance()
+        cal.add(Calendar.DAY_OF_YEAR, dayOffset)
         cal.set(Calendar.HOUR_OF_DAY, 0)
         cal.set(Calendar.MINUTE, 0)
         cal.set(Calendar.SECOND, 0)
