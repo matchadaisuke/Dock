@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="timeout_default_value">10800000</string>
+    <string name="timeout_default_value" translatable="false">10800000</string>
 
     <string-array name="timeout_labels">
         <item>@string/timeout_30_min</item>
@@ -20,7 +20,7 @@
         <item>0</item>
     </string-array>
 
-    <string name="ambient_default_value">90000</string>
+    <string name="ambient_default_value" translatable="false">90000</string>
 
     <string-array name="ambient_labels">
         <item>@string/ambient_off</item>
@@ -40,7 +40,7 @@
         <item>300000</item>
     </string-array>
 
-    <string name="soundbar_keepalive_default_value">300000</string>
+    <string name="soundbar_keepalive_default_value" translatable="false">300000</string>
 
     <string-array name="soundbar_keepalive_labels">
         <item>@string/soundbar_interval_2_min</item>
