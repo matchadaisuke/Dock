@@ -121,7 +121,7 @@
     <string name="meta_meet">Meet</string>
     <string name="meta_zoom">Zoom</string>
     <string name="meta_accepted">✓ 承諾済み</string>
-    <string name="meta_tentative">? 仮承諾</string>
+    <string name="meta_tentative">仮承諾</string>
     <string name="meta_awaiting">返信待ち</string>
     <string name="meta_people">%1$d 人</string>
     <string name="meta_oof">不在</string>
