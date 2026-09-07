@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="calendar_add_source_in_settings">Ajouter un calendrier dans les paramètres</string>
+    <string name="calendar_partial_fetch_error">Certains calendriers n’ont pas pu être actualisés</string>
 
     <plurals name="deck_event_count">
         <item quantity="one">%1$d ÉVÉNEMENT</item>
