@@ -5,4 +5,5 @@
     <string name="deck_personal">Calendrier</string>
     <string name="deck_quiet_personal_title">Rien de prévu</string>
     <string name="deck_quiet_personal_subtitle">Aucun événement aujourd’hui</string>
+    <string name="calendar_partial_fetch_error">Le calendrier n’a pas pu être actualisé</string>
 </resources>
