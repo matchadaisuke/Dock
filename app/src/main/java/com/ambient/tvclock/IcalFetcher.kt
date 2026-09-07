@@ -106,7 +106,7 @@ object IcalFetcher {
             } catch (e: Exception) {
                 if (isPrematureEof(e) && attempt < MAX_PREMATURE_EOF_RETRIES) {
                     Log.w(TAG, "Calendar response ended early; retrying (${attempt + 1}/$MAX_PREMATURE_EOF_RETRIES)")
-                    continue
+                    return@repeat
                 }
                 Log.e(TAG, "Fetch failed: ${e.javaClass.simpleName}: ${e.message}")
                 return FetchResult.Failed(
