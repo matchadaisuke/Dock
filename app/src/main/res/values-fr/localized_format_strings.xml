@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="calendar_add_source_in_settings">Ajouter un calendrier dans les paramètres</string>
+
+    <plurals name="deck_event_count">
+        <item quantity="one">%1$d ÉVÉNEMENT</item>
+        <item quantity="other">%1$d ÉVÉNEMENTS</item>
+    </plurals>
+    <plurals name="deck_meeting_count">
+        <item quantity="one">%1$d RÉUNION</item>
+        <item quantity="other">%1$d RÉUNIONS</item>
+    </plurals>
+    <plurals name="deck_done_count">
+        <item quantity="one">%1$d TERMINÉ</item>
+        <item quantity="other">%1$d TERMINÉS</item>
+    </plurals>
+    <plurals name="deck_tentative_count">
+        <item quantity="one">%1$d PROVISOIRE</item>
+        <item quantity="other">%1$d PROVISOIRES</item>
+    </plurals>
+
+    <string name="countdown_minutes">%1$d MIN</string>
+    <string name="countdown_hours">%1$d H</string>
+    <string name="countdown_hours_minutes">%1$d H %2$d MIN</string>
+</resources>
