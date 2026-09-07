@@ -1,0 +1,200 @@
+name: Release JA Security Build 2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.release/v1.2.0-ja-sec2'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-v1.2.0-ja-sec2
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, sign, verify & release
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      TAG: v1.2.0-ja-sec2
+      EXPECTED_CERT_SHA256: a941f37cc4a9c63b6c6eaa12cdc0082e4ef03004c18becbca8c4efdfbcda05f1
+
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          accept-android-sdk-licenses: true
+
+      - name: Install required SDK components
+        run: |
+          set -euo pipefail
+          (yes || true) | sdkmanager --install \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;26.1.10909125" \
+            "cmake;3.22.1" \
+            "platform-tools" >/dev/null
+
+      - name: Cache Gradle
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Prepare API configuration and release signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+          UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          umask 077
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          if [ -n "${SPOTIFY_CLIENT_ID:-}" ]; then echo "spotify.clientId=$SPOTIFY_CLIENT_ID" >> local.properties; fi
+          if [ -n "${UNSPLASH_ACCESS_KEY:-}" ]; then echo "unsplash.accessKey=$UNSPLASH_ACCESS_KEY" >> local.properties; fi
+          if [ -n "${GOOGLE_OAUTH_CLIENT_ID:-}" ]; then echo "google.oauth.client.id=$GOOGLE_OAUTH_CLIENT_ID" >> local.properties; fi
+          if [ -n "${GOOGLE_OAUTH_CLIENT_SECRET:-}" ]; then echo "google.oauth.client.secret=$GOOGLE_OAUTH_CLIENT_SECRET" >> local.properties; fi
+          if [ -n "${GOOGLE_OAUTH_REFRESH_TOKEN:-}" ]; then echo "google.oauth.refresh.token=$GOOGLE_OAUTH_REFRESH_TOKEN" >> local.properties; fi
+
+          for required in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!required:-}" ]; then
+              echo "::error::$required is not configured. Refusing to publish an APK with a new signing identity."
+              exit 1
+            fi
+          done
+
+          mkdir -p .signing
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > .signing/release.keystore
+          {
+            echo "signing.keystoreFile=$(pwd)/.signing/release.keystore"
+            echo "signing.keystorePassword=$ANDROID_KEYSTORE_PASSWORD"
+            echo "signing.keyAlias=$ANDROID_KEY_ALIAS"
+            echo "signing.keyPassword=$ANDROID_KEY_PASSWORD"
+          } >> local.properties
+
+      - name: Run unit tests
+        run: ./gradlew :app:testFiretvDebugUnitTest --no-daemon --stacktrace
+
+      - name: Run lint
+        run: ./gradlew :app:lintFiretvDebug --no-daemon --stacktrace
+
+      - name: Build release APKs
+        run: ./gradlew :app:assembleFiretvRelease :app:assembleGoogletvRelease --no-daemon --stacktrace
+
+      - name: Verify signatures and stage artifacts
+        id: verify
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/*/release/*.apk)
+          if [ ${#apks[@]} -ne 2 ]; then
+            echo "::error::Expected two release APKs, found ${#apks[@]}"
+            exit 1
+          fi
+
+          CERT_SHA256=""
+          for apk in "${apks[@]}"; do
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk"
+            apk_cert=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n1)
+            test -n "$apk_cert"
+            if [ -z "$CERT_SHA256" ]; then CERT_SHA256="$apk_cert"; fi
+            if [ "$apk_cert" != "$CERT_SHA256" ]; then
+              echo "::error::Release APKs were signed by different certificates"
+              exit 1
+            fi
+            cp "$apk" "artifacts/$(basename "$apk" .apk)-${TAG}.apk"
+          done
+
+          if [ "$CERT_SHA256" != "$EXPECTED_CERT_SHA256" ]; then
+            echo "::error::Signing certificate does not match v1.2.0-ja-sec1. Expected $EXPECTED_CERT_SHA256, got $CERT_SHA256"
+            exit 1
+          fi
+
+          (cd artifacts && sha256sum *.apk > SHA256SUMS.txt)
+          echo "cert_sha256=$CERT_SHA256" >> "$GITHUB_OUTPUT"
+          cat artifacts/SHA256SUMS.txt
+
+      - name: Write release notes
+        env:
+          CERT_SHA256: ${{ steps.verify.outputs.cert_sha256 }}
+        run: |
+          set -euo pipefail
+          cat > release-notes.md <<'EOF'
+          ## Dock 1.2.0 JA Security Build 2
+
+          Japanese dashboard and calendar reliability update based on the existing 1.2.0 JA Security release.
+
+          ### Changes
+          - Correct Japanese date ordering and locale-aware AM/PM placement, including 12/24-hour preference support.
+          - Improve Japanese typography by avoiding mixed Latin-font fallback metrics inside CJK text.
+          - Collapse the Personal / Work home decks into one full-width Calendar deck and one Calendar URL setting.
+          - Preserve existing calendar settings through migration to the single-calendar model.
+          - Distinguish empty calendars from fetch/parse failures and retain the previous successful refresh state on errors.
+          - Improve Google Calendar API pagination/failure handling and fall back to the configured iCal feed when needed.
+          - Accept secure webcal subscriptions and increase the bounded iCal feed size for real-world calendars.
+
+          ### Compatibility
+          - Fire TV: minSdk 25
+          - Google / Android TV: minSdk 29
+          - Existing v1.2.0-ja-sec1 installations remain update-compatible because the release signing certificate is verified before publication.
+          EOF
+
+          {
+            echo
+            echo "### Signing"
+            echo "- Signing certificate SHA-256: \`$CERT_SHA256\`"
+            echo "- Certificate continuity with v1.2.0-ja-sec1: **verified**"
+            echo
+            echo "### APK SHA-256"
+            echo '```text'
+            cat artifacts/SHA256SUMS.txt
+            echo '```'
+          } >> release-notes.md
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            artifacts/*.apk artifacts/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Dock 1.2.0 JA Security Build 2" \
+            --notes-file release-notes.md
+
+      - name: Summary
+        env:
+          CERT_SHA256: ${{ steps.verify.outputs.cert_sha256 }}
+        run: |
+          {
+            echo "## Released $TAG"
+            echo "- Certificate SHA-256: \`$CERT_SHA256\`"
+            echo "- APKs: Fire TV + Google/Android TV"
+            echo
+            cat artifacts/SHA256SUMS.txt
+          } >> "$GITHUB_STEP_SUMMARY"
