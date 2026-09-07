@@ -4,7 +4,7 @@
     <!-- Dock dashboard networking (Spotify, calendar feeds). -->
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- Receiver subsystem (inert until Phase 2 wires the settings toggle). -->
+    <!-- Receiver subsystem. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -16,37 +16,29 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- Optional overlay pill that surfaces "VPN active · <geo>" over other apps. -->
+    <!-- Optional overlay pill that surfaces VPN status over other apps. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
-    <uses-feature
-        android:name="android.software.leanback"
-        android:required="true" />
-    <uses-feature
-        android:name="android.hardware.touchscreen"
-        android:required="false" />
-    <uses-feature
-        android:name="android.hardware.wifi"
-        android:required="false" />
-    <uses-feature
-        android:name="android.hardware.location"
-        android:required="false" />
-    <uses-feature
-        android:name="android.hardware.location.gps"
-        android:required="false" />
-    <uses-feature
-        android:name="android.hardware.location.network"
-        android:required="false" />
+    <uses-feature android:name="android.software.leanback" android:required="true" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.wifi" android:required="false" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+    <uses-feature android:name="android.hardware.location.network" android:required="false" />
 
     <application
         android:name=".DockApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:banner="@drawable/tv_banner"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
         android:theme="@style/Theme.TvAwakeClock">
+
+        <!-- Cleartext remains enabled because the optional Home Lab / Ad-block /
+             wallpaper features intentionally support private-LAN HTTP endpoints.
+             Calendar feeds enforce HTTPS in application code. -->
 
         <activity
             android:name=".MainActivity"
@@ -59,34 +51,11 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".grainstorm.WallpaperPickerActivity"
-            android:exported="false"
-            android:label="@string/wallpaper_picker_title"
-            android:screenOrientation="landscape"
-            android:theme="@style/Theme.TvAwakeClock" />
-
-        <activity
-            android:name=".SettingsActivity"
-            android:exported="false"
-            android:label="@string/settings_title"
-            android:screenOrientation="landscape" />
-
-        <activity
-            android:name=".SetupActivity"
-            android:exported="false"
-            android:screenOrientation="landscape" />
-
-        <activity
-            android:name=".DashboardWebActivity"
-            android:exported="false"
-            android:screenOrientation="landscape" />
-
-        <activity
-            android:name=".SpotifyAuthActivity"
-            android:exported="false"
-            android:label="@string/spotify_auth_title"
-            android:screenOrientation="landscape" />
+        <activity android:name=".grainstorm.WallpaperPickerActivity" android:exported="false" android:label="@string/wallpaper_picker_title" android:screenOrientation="landscape" android:theme="@style/Theme.TvAwakeClock" />
+        <activity android:name=".SettingsActivity" android:exported="false" android:label="@string/settings_title" android:screenOrientation="landscape" />
+        <activity android:name=".SetupActivity" android:exported="false" android:screenOrientation="landscape" />
+        <activity android:name=".DashboardWebActivity" android:exported="false" android:screenOrientation="landscape" />
+        <activity android:name=".SpotifyAuthActivity" android:exported="false" android:label="@string/spotify_auth_title" android:screenOrientation="landscape" />
 
         <activity
             android:name=".SpotifyCallbackActivity"
@@ -97,15 +66,10 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:host="spotify-callback"
-                    android:scheme="com.ambient.tvclock" />
+                <data android:host="spotify-callback" android:scheme="com.ambient.tvclock" />
             </intent-filter>
         </activity>
 
-        <!-- The system screensaver. Fire OS does not expose the picker on
-             every build; where it is missing, select it with
-             `adb shell settings put secure screensaver_components`. -->
         <service
             android:name=".dream.GrainstormDreamService"
             android:exported="true"
@@ -115,9 +79,7 @@
                 <action android:name="android.service.dreams.DreamService" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
-            <meta-data
-                android:name="android.service.dream"
-                android:resource="@xml/grainstorm_dream" />
+            <meta-data android:name="android.service.dream" android:resource="@xml/grainstorm_dream" />
         </service>
 
         <service
@@ -129,55 +91,29 @@
             </intent-filter>
         </service>
 
-        <receiver
-            android:name=".CalendarRefreshReceiver"
-            android:exported="true">
+        <!-- Kept exported for the documented ADB/manual refresh feature. It does
+             not accept data; it only asks the app to refresh its configured feed. -->
+        <receiver android:name=".CalendarRefreshReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="com.ambient.tvclock.action.REFRESH_CALENDAR" />
             </intent-filter>
         </receiver>
 
-        <!-- Receiver subsystem (Phase 1: declared but not started by default). -->
-        <service
-            android:name=".receiver.ReceiverService"
-            android:foregroundServiceType="connectedDevice"
-            android:exported="false" />
+        <service android:name=".receiver.ReceiverService" android:foregroundServiceType="connectedDevice" android:exported="false" />
 
-        <receiver
-            android:name=".receiver.BootReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-            </intent-filter>
+        <receiver android:name=".receiver.BootReceiver" android:exported="false">
+            <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter>
         </receiver>
 
-        <!-- WireGuard VPN. The actual VpnService is the library's inner class; we just
-             register it here with the BIND_VPN_SERVICE permission Android requires. -->
         <service
             android:name="com.wireguard.android.backend.GoBackend$VpnService"
             android:permission="android.permission.BIND_VPN_SERVICE"
             android:exported="false">
-            <intent-filter>
-                <action android:name="android.net.VpnService" />
-            </intent-filter>
+            <intent-filter><action android:name="android.net.VpnService" /></intent-filter>
         </service>
 
-        <activity
-            android:name=".vpn.ConfigImportActivity"
-            android:exported="false"
-            android:label="@string/vpn_import_title"
-            android:screenOrientation="landscape" />
-
-        <activity
-            android:name=".receiver.airplay.AirPlayNowPlayingActivity"
-            android:exported="false"
-            android:launchMode="singleTop"
-            android:screenOrientation="landscape"
-            android:noHistory="true"
-            android:excludeFromRecents="true" />
-
-        <service
-            android:name=".vpn.VpnOverlayService"
-            android:exported="false" />
+        <activity android:name=".vpn.ConfigImportActivity" android:exported="false" android:label="@string/vpn_import_title" android:screenOrientation="landscape" />
+        <activity android:name=".receiver.airplay.AirPlayNowPlayingActivity" android:exported="false" android:launchMode="singleTop" android:screenOrientation="landscape" android:noHistory="true" android:excludeFromRecents="true" />
+        <service android:name=".vpn.VpnOverlayService" android:exported="false" />
     </application>
 </manifest>
