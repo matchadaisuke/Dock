@@ -29,6 +29,7 @@ class CalendarEventAdapter(
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
         val view = LayoutInflater.from(parent.context)
             .inflate(R.layout.item_calendar_event, parent, false)
+        LocaleTypography.apply(view)
         return Holder(view)
     }
 
@@ -42,9 +43,9 @@ class CalendarEventAdapter(
             holder.textTimeStart.text = context.getString(R.string.calendar_all_day)
             holder.textTimeEnd.visibility = View.GONE
         } else {
-            holder.textTimeStart.text = CalendarDisplayHelper.formatTime(event.startMillis)
+            holder.textTimeStart.text = CalendarDisplayHelper.formatTime(context, event.startMillis)
             holder.textTimeEnd.visibility = View.VISIBLE
-            holder.textTimeEnd.text = CalendarDisplayHelper.formatTime(event.endMillis)
+            holder.textTimeEnd.text = CalendarDisplayHelper.formatTime(context, event.endMillis)
         }
 
         holder.textTitle.text = event.title
